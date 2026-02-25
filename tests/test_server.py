@@ -169,3 +169,84 @@ async def test_execute_stderr():
             "execute", {"code": 'import sys; print("err", file=sys.stderr)'}
         )
         assert result.data["stderr"] == "err\n"
+
+
+# -- Instructions & prompts ---------------------------------------------------
+
+
+def test_server_instructions():
+    assert mcp.instructions
+    assert "start_kernel" in mcp.instructions
+
+
+async def test_list_prompts():
+    async with Client(mcp) as client:
+        prompts = await client.list_prompts()
+        names = {p.name for p in prompts}
+        assert "run_code" in names
+        assert "debug_error" in names
+        assert "explore_project" in names
+
+
+async def test_run_code_prompt():
+    async with Client(mcp) as client:
+        result = await client.get_prompt("run_code", {"code": "1+1"})
+        assert result.messages
+        assert any("1+1" in m.content.text for m in result.messages)
+
+
+async def test_debug_error_prompt():
+    async with Client(mcp) as client:
+        result = await client.get_prompt(
+            "debug_error", {"code": "1/0", "error": "ZeroDivisionError"}
+        )
+        assert result.messages
+        assert any("1/0" in m.content.text for m in result.messages)
+
+
+# -- Content blocks (images, mixed output) ------------------------------------
+
+
+async def test_execute_display_data_image():
+    """display(Image(...)) should produce an ImageContent block."""
+    async with Client(mcp) as client:
+        await client.call_tool("start_kernel", {"project_dir": PROJECT_DIR})
+        code = (
+            "from IPython.display import display, Image\n"
+            "import base64\n"
+            "# 1x1 red PNG pixel\n"
+            "png = base64.b64decode("
+            "'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4z8BQDwAEgAF/pooBPQAAAABJRU5ErkJggg==')\n"
+            "display(Image(data=png, format='png'))"
+        )
+        result = await client.call_tool("execute", {"code": code})
+        # structured_content should still work
+        assert result.data["stdout"] == ""
+        # Check content blocks contain an image
+        image_blocks = [b for b in result.content if b.type == "image"]
+        assert len(image_blocks) >= 1
+        assert image_blocks[0].mimeType == "image/png"
+        assert len(image_blocks[0].data) > 0
+
+
+async def test_execute_mixed_output():
+    """Printing text AND displaying an image should produce both block types."""
+    async with Client(mcp) as client:
+        await client.call_tool("start_kernel", {"project_dir": PROJECT_DIR})
+        code = (
+            "from IPython.display import display, Image\n"
+            "import base64\n"
+            "print('before image')\n"
+            "png = base64.b64decode("
+            "'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4z8BQDwAEgAF/pooBPQAAAABJRU5ErkJggg==')\n"
+            "display(Image(data=png, format='png'))\n"
+            "print('after image')"
+        )
+        result = await client.call_tool("execute", {"code": code})
+        # Structured content has the combined stdout
+        assert "before image" in result.data["stdout"]
+        assert "after image" in result.data["stdout"]
+        # Content blocks should have text and image
+        types = [b.type for b in result.content]
+        assert "text" in types
+        assert "image" in types
