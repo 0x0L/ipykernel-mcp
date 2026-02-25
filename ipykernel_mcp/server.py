@@ -101,7 +101,10 @@ def start_kernel(project_dir: str) -> str:
     _kernel_client = kc
     _project_dir = str(project_path)
 
-    return f"Kernel started. Python: {venv_python}, cwd: {project_path}, connection_file: {km.connection_file}"
+    return (
+        f"Kernel started. Python: {venv_python}, cwd: {project_path}, connection_file: {km.connection_file}\n"
+        f"Monitor output: npx github:0x0L/jupyter_watch {km.connection_file}"
+    )
 
 
 @mcp.tool

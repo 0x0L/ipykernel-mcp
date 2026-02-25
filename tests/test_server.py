@@ -51,6 +51,7 @@ async def test_start_kernel():
         assert "Kernel started" in result.data
         assert ".venv/bin/python" in result.data
         assert "connection_file:" in result.data
+        assert "npx github:0x0L/jupyter_watch" in result.data
 
 
 async def test_status_after_start():

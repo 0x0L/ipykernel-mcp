@@ -43,6 +43,16 @@ Or add it to your MCP client configuration:
 }
 ```
 
+## Monitoring
+
+[jupyter_watch](https://github.com/0x0L/jupyter_watch) can monitor kernel output (stdout, stderr, display data) in real-time in a browser:
+
+```bash
+npx github:0x0L/jupyter_watch <connection_file>
+```
+
+The connection file path is printed by `start_kernel` when the kernel starts.
+
 ## Development
 
 ```bash
