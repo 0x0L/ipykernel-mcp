@@ -50,6 +50,7 @@ async def test_start_kernel():
         result = await client.call_tool("start_kernel", {"project_dir": PROJECT_DIR})
         assert "Kernel started" in result.data
         assert ".venv/bin/python" in result.data
+        assert "connection_file:" in result.data
 
 
 async def test_status_after_start():
@@ -122,8 +123,13 @@ async def test_restart_kernel():
         result = await client.call_tool("restart_kernel", {})
         assert "Kernel restarted" in result.data
         result = await client.call_tool("execute", {"code": "x"})
-        assert result.data.get("error") is not None
-        assert result.data["error"]["ename"] == "NameError"
+        error_blocks = [
+            b
+            for b in result.content
+            if b.type == "text" and b.text.startswith("[error]")
+        ]
+        assert len(error_blocks) == 1
+        assert "NameError" in error_blocks[0].text
 
 
 # -- Execute tool -------------------------------------------------------------
@@ -132,34 +138,51 @@ async def test_restart_kernel():
 async def test_execute_no_kernel():
     async with Client(mcp) as client:
         result = await client.call_tool("execute", {"code": "1+1"})
-        assert "error" in result.data
-        assert "No kernel running" in result.data["error"]
+        assert len(result.content) == 1
+        assert "No kernel running" in result.content[0].text
 
 
 async def test_execute_print():
     async with Client(mcp) as client:
         await client.call_tool("start_kernel", {"project_dir": PROJECT_DIR})
         result = await client.call_tool("execute", {"code": 'print("hello")'})
-        assert result.data["stdout"] == "hello\n"
+        stdout_blocks = [
+            b
+            for b in result.content
+            if b.type == "text" and b.text.startswith("[stdout]")
+        ]
+        assert len(stdout_blocks) == 1
+        assert "hello\n" in stdout_blocks[0].text
 
 
 async def test_execute_expression():
     async with Client(mcp) as client:
         await client.call_tool("start_kernel", {"project_dir": PROJECT_DIR})
         result = await client.call_tool("execute", {"code": "2 + 2"})
-        assert result.data["result"] == "4"
+        result_blocks = [
+            b
+            for b in result.content
+            if b.type == "text" and b.text.startswith("[result]")
+        ]
+        assert len(result_blocks) == 1
+        assert "4" in result_blocks[0].text
 
 
 async def test_execute_error():
     async with Client(mcp) as client:
         await client.call_tool("start_kernel", {"project_dir": PROJECT_DIR})
         result = await client.call_tool("execute", {"code": "1/0"})
-        err = result.data["error"]
-        assert err["ename"] == "ZeroDivisionError"
-        assert "division by zero" in err["evalue"]
+        error_blocks = [
+            b
+            for b in result.content
+            if b.type == "text" and b.text.startswith("[error]")
+        ]
+        assert len(error_blocks) == 1
+        text = error_blocks[0].text
+        assert "ZeroDivisionError" in text
+        assert "division by zero" in text
         # Verify ANSI codes are stripped from traceback
-        for line in err["traceback"]:
-            assert "\x1b[" not in line
+        assert "\x1b[" not in text
 
 
 async def test_execute_stderr():
@@ -168,7 +191,13 @@ async def test_execute_stderr():
         result = await client.call_tool(
             "execute", {"code": 'import sys; print("err", file=sys.stderr)'}
         )
-        assert result.data["stderr"] == "err\n"
+        stderr_blocks = [
+            b
+            for b in result.content
+            if b.type == "text" and b.text.startswith("[stderr]")
+        ]
+        assert len(stderr_blocks) == 1
+        assert "err\n" in stderr_blocks[0].text
 
 
 # -- Instructions & prompts ---------------------------------------------------
@@ -220,8 +249,13 @@ async def test_execute_display_data_image():
             "display(Image(data=png, format='png'))"
         )
         result = await client.call_tool("execute", {"code": code})
-        # structured_content should still work
-        assert result.data["stdout"] == ""
+        # No stdout block expected
+        stdout_blocks = [
+            b
+            for b in result.content
+            if b.type == "text" and b.text.startswith("[stdout]")
+        ]
+        assert len(stdout_blocks) == 0
         # Check content blocks contain an image
         image_blocks = [b for b in result.content if b.type == "image"]
         assert len(image_blocks) >= 1
@@ -243,9 +277,15 @@ async def test_execute_mixed_output():
             "print('after image')"
         )
         result = await client.call_tool("execute", {"code": code})
-        # Structured content has the combined stdout
-        assert "before image" in result.data["stdout"]
-        assert "after image" in result.data["stdout"]
+        # stdout block has the combined stdout
+        stdout_blocks = [
+            b
+            for b in result.content
+            if b.type == "text" and b.text.startswith("[stdout]")
+        ]
+        assert len(stdout_blocks) == 1
+        assert "before image" in stdout_blocks[0].text
+        assert "after image" in stdout_blocks[0].text
         # Content blocks should have text and image
         types = [b.type for b in result.content]
         assert "text" in types

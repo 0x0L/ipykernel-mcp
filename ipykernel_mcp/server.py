@@ -101,7 +101,7 @@ def start_kernel(project_dir: str) -> str:
     _kernel_client = kc
     _project_dir = str(project_path)
 
-    return f"Kernel started. Python: {venv_python}, cwd: {project_path}"
+    return f"Kernel started. Python: {venv_python}, cwd: {project_path}, connection_file: {km.connection_file}"
 
 
 @mcp.tool
@@ -181,7 +181,6 @@ def execute(code: str, timeout: float = 30.0) -> ToolResult:
                     type="text", text="No kernel running. Call start_kernel first."
                 )
             ],
-            structured_content={"error": "No kernel running. Call start_kernel first."},
         )
 
     msg_id = _kernel_client.execute(code)
@@ -222,29 +221,25 @@ def execute(code: str, timeout: float = 30.0) -> ToolResult:
         elif msg_type == "status" and content["execution_state"] == "idle":
             break
 
-    # Build structured dict (backward-compatible)
-    structured: dict = {"stdout": stdout, "stderr": stderr}
-    if result is not None:
-        structured["result"] = result
-    if error is not None:
-        structured["error"] = error
-
     # Build MCP content blocks in order: stdout, stderr, images, result, error
     blocks: list[TextContent | ImageContent] = []
     if stdout:
-        blocks.append(TextContent(type="text", text=stdout))
+        blocks.append(TextContent(type="text", text=f"[stdout]\n{stdout}"))
     if stderr:
-        blocks.append(TextContent(type="text", text=f"[stderr] {stderr}"))
+        blocks.append(TextContent(type="text", text=f"[stderr]\n{stderr}"))
     blocks.extend(image_blocks)
     if result is not None:
-        blocks.append(TextContent(type="text", text=result))
+        blocks.append(TextContent(type="text", text=f"[result]\n{result}"))
     if error is not None:
         tb = "\n".join(error["traceback"])
         blocks.append(
-            TextContent(type="text", text=f"{error['ename']}: {error['evalue']}\n{tb}")
+            TextContent(
+                type="text",
+                text=f"[error]\n{error['ename']}: {error['evalue']}\n{tb}",
+            )
         )
 
-    return ToolResult(content=blocks, structured_content=structured)
+    return ToolResult(content=blocks)
 
 
 # -- Prompts ------------------------------------------------------------------
