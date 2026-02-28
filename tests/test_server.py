@@ -12,11 +12,11 @@ PROJECT_DIR = str(Path(__file__).resolve().parent.parent)
 
 
 @pytest.fixture(autouse=True)
-def clean_kernel_state():
+async def clean_kernel_state():
     """Ensure no kernel is running before/after each test."""
-    _cleanup()
+    await _cleanup()
     yield
-    _cleanup()
+    await _cleanup()
 
 
 # -- Error paths (stateless, fast) ------------------------------------------
@@ -76,7 +76,7 @@ async def test_double_start_rejected():
 async def test_cleanup_resets_state():
     async with Client(mcp) as client:
         await client.call_tool("start_kernel", {"project_dir": PROJECT_DIR})
-        _cleanup()
+        await _cleanup()
         result = await client.call_tool("status", {})
         assert result.data == {"running": False}
 
@@ -85,7 +85,7 @@ async def test_start_after_cleanup():
     """Can start a new kernel after cleaning up the previous one."""
     async with Client(mcp) as client:
         await client.call_tool("start_kernel", {"project_dir": PROJECT_DIR})
-        _cleanup()
+        await _cleanup()
         result = await client.call_tool("start_kernel", {"project_dir": PROJECT_DIR})
         assert "Kernel started" in result.data
 
@@ -131,6 +131,41 @@ async def test_restart_kernel():
         ]
         assert len(error_blocks) == 1
         assert "NameError" in error_blocks[0].text
+
+
+# -- Interrupt kernel ---------------------------------------------------------
+
+
+async def test_interrupt_no_kernel():
+    async with Client(mcp) as client:
+        result = await client.call_tool("kernel_interrupt", {})
+        assert "Error" in result.data
+        assert "no kernel is running" in result.data
+
+
+async def test_interrupt_kernel():
+    """Interrupting a long sleep should produce a KeyboardInterrupt error."""
+    async with Client(mcp) as client:
+        await client.call_tool("start_kernel", {"project_dir": PROJECT_DIR})
+        # Start a long sleep, then interrupt it
+        import asyncio
+
+        exec_task = asyncio.create_task(
+            client.call_tool("execute", {"code": "import time; time.sleep(60)"})
+        )
+        # Give the kernel a moment to start executing
+        await asyncio.sleep(1)
+        interrupt_result = await client.call_tool("kernel_interrupt", {})
+        assert "Interrupt signal sent" in interrupt_result.data
+
+        result = await exec_task
+        error_blocks = [
+            b
+            for b in result.content
+            if b.type == "text" and b.text.startswith("[error]")
+        ]
+        assert len(error_blocks) == 1
+        assert "KeyboardInterrupt" in error_blocks[0].text
 
 
 # -- Execute tool -------------------------------------------------------------

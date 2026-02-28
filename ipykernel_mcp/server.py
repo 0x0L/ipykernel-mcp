@@ -6,9 +6,8 @@ from pathlib import Path
 from fastmcp import FastMCP
 from fastmcp.server.lifespan import lifespan
 from fastmcp.tools.tool import ToolResult
-from jupyter_client.blocking import BlockingKernelClient
+from jupyter_client import AsyncKernelClient, AsyncKernelManager
 from jupyter_client.kernelspec import KernelSpec
-from jupyter_client.manager import KernelManager
 from mcp.types import ImageContent, TextContent
 
 
@@ -17,7 +16,7 @@ async def kernel_lifespan(server):
     try:
         yield {}
     finally:
-        _cleanup()
+        await _cleanup()
 
 
 mcp = FastMCP(
@@ -32,30 +31,31 @@ mcp = FastMCP(
         "call returns stdout, stderr, result (the expression value), and error "
         "(traceback details) as structured output.\n"
         "\n"
-        "Use `restart_kernel` to clear all state. Use `stop_kernel` to shut down. "
-        "Only one kernel runs at a time."
+        "Use `restart_kernel` to clear all state. Use `interrupt` to cancel a "
+        "long-running execution without losing state. Use `stop_kernel` to shut "
+        "down. Only one kernel runs at a time."
     ),
     lifespan=kernel_lifespan,
 )
 
-_kernel_manager: KernelManager | None = None
-_kernel_client: BlockingKernelClient | None = None
+_kernel_manager: AsyncKernelManager | None = None
+_kernel_client: AsyncKernelClient | None = None
 _project_dir: str | None = None
 
 
-def _cleanup() -> None:
+async def _cleanup() -> None:
     global _kernel_manager, _kernel_client, _project_dir
     if _kernel_client is not None:
         _kernel_client.stop_channels()
         _kernel_client = None
     if _kernel_manager is not None:
-        _kernel_manager.shutdown_kernel(now=True)
+        await _kernel_manager.shutdown_kernel(now=True)
         _kernel_manager = None
     _project_dir = None
 
 
 @mcp.tool
-def start_kernel(project_dir: str) -> str:
+async def start_kernel(project_dir: str) -> str:
     """Start an IPython kernel using the venv from the given project directory.
 
     The project directory must contain a .venv with ipykernel installed.
@@ -79,11 +79,11 @@ def start_kernel(project_dir: str) -> str:
         language="python",
     )
 
-    km = KernelManager()
+    km = AsyncKernelManager()
     km._kernel_spec = spec
 
     try:
-        km.start_kernel(cwd=str(project_path))
+        await km.start_kernel(cwd=str(project_path))
     except Exception as exc:
         return f"Error: failed to start kernel: {exc}"
 
@@ -91,10 +91,10 @@ def start_kernel(project_dir: str) -> str:
     kc.start_channels()
 
     try:
-        kc.wait_for_ready(timeout=60)
+        await kc.wait_for_ready(timeout=60)
     except RuntimeError as exc:
         kc.stop_channels()
-        km.shutdown_kernel(now=True)
+        await km.shutdown_kernel(now=True)
         return f"Error: kernel did not become ready: {exc}"
 
     _kernel_manager = km
@@ -108,14 +108,14 @@ def start_kernel(project_dir: str) -> str:
 
 
 @mcp.tool
-def status() -> dict:
+async def status() -> dict:
     """Return the current kernel status."""
     if _kernel_manager is None:
         return {"running": False}
 
     info: dict = {
         "running": True,
-        "alive": _kernel_manager.is_alive(),
+        "alive": await _kernel_manager.is_alive(),
         "project_dir": _project_dir,
         "python": _kernel_manager._kernel_spec.argv[0]
         if _kernel_manager._kernel_spec
@@ -132,26 +132,38 @@ def status() -> dict:
 
 
 @mcp.tool
-def stop_kernel() -> str:
+async def stop_kernel() -> str:
     """Stop the running kernel and clean up resources."""
     if _kernel_manager is None:
         return "Error: no kernel is running."
-    _cleanup()
+    await _cleanup()
     return "Kernel stopped."
 
 
 @mcp.tool
-def restart_kernel() -> str:
+async def restart_kernel() -> str:
     """Restart the running kernel, preserving the connection."""
     if _kernel_manager is None or _kernel_client is None:
         return "Error: no kernel is running."
     try:
-        _kernel_manager.restart_kernel(now=True)
-        _kernel_client.wait_for_ready(timeout=60)
+        await _kernel_manager.restart_kernel(now=True)
+        await _kernel_client.wait_for_ready(timeout=60)
     except Exception as exc:
-        _cleanup()
+        await _cleanup()
         return f"Error: failed to restart kernel: {exc}"
     return "Kernel restarted."
+
+
+@mcp.tool
+async def kernel_interrupt() -> str:
+    """Interrupt the running kernel (send SIGINT).
+
+    Use this to cancel a long-running execution without losing kernel state.
+    """
+    if _kernel_manager is None:
+        return "Error: no kernel is running."
+    await _kernel_manager.interrupt_kernel()
+    return "Interrupt signal sent."
 
 
 _ANSI_ESCAPE = re.compile(r"\x1b\[[0-9;]*m")
@@ -171,7 +183,7 @@ def _extract_images(mime_bundle: dict) -> list[ImageContent]:
 
 
 @mcp.tool
-def execute(code: str, timeout: float = 30.0) -> ToolResult:
+async def execute(code: str, timeout: float | None = None) -> ToolResult:
     """Execute code on the running IPython kernel and return the output.
 
     Returns structured output (stdout, stderr, result, error) and MCP content
@@ -195,7 +207,7 @@ def execute(code: str, timeout: float = 30.0) -> ToolResult:
     image_blocks: list[ImageContent] = []
 
     while True:
-        msg = _kernel_client.get_iopub_msg(timeout=timeout)
+        msg = await _kernel_client.get_iopub_msg(timeout=timeout)
 
         # Only process messages from our execution request.
         if msg["parent_header"].get("msg_id") != msg_id:
