@@ -146,9 +146,10 @@ async def _cleanup() -> None:
 
 @mcp.tool
 async def kernel_start(project_dir: str) -> str:
-    """Start an IPython kernel using the venv from the given project directory.
+    """Start an IPython kernel using the .venv from the given project directory.
 
-    The project directory must contain a .venv with ipykernel installed.
+    The directory must contain a .venv with ipykernel installed. Only one kernel
+    can run at a time — call kernel_stop first if one is already running.
     """
     global _kernel_manager, _kernel_client, _project_dir, _reader_task
 
@@ -200,7 +201,12 @@ async def kernel_start(project_dir: str) -> str:
 
 @mcp.tool
 async def kernel_status() -> dict:
-    """Return the current kernel status."""
+    """Return the current kernel status.
+
+    Returns a dict with: running, alive, project_dir, connection_file, python,
+    pending_executions, transport, ip, shell_port, iopub_port.
+    Returns {"running": False} if no kernel is running.
+    """
     if _kernel_manager is None:
         return {"running": False}
 
@@ -235,7 +241,11 @@ async def kernel_stop() -> str:
 
 @mcp.tool
 async def kernel_restart() -> str:
-    """Restart the running kernel, preserving the connection."""
+    """Restart the kernel, clearing all variables, imports, and state.
+
+    Pending executions are discarded. The kernel process is replaced but the
+    connection is preserved — no need to call kernel_start again.
+    """
     global _reader_task
     if _kernel_manager is None or _kernel_client is None:
         return "Error: no kernel is running."
@@ -316,14 +326,15 @@ def _build_tool_result(
 
 @mcp.tool
 async def kernel_execute(code: str, timeout: float | None = None) -> ToolResult:
-    """Execute code on the running IPython kernel and return the output.
+    """Execute code on the running kernel and return structured output.
 
-    Returns structured output (stdout, stderr, result, error) and MCP content
-    blocks including images from plots and display calls.
+    Output is returned as tagged text blocks: [stdout], [stderr], [result]
+    (last expression value), [error] (with traceback), plus image blocks for
+    plots and display calls.
 
-    If timeout is set and execution takes longer, returns partial output with a
-    [pending] block containing a msg_id. Use kernel_get_output to retrieve the
-    remaining output.
+    If timeout is set and execution exceeds it, returns any output collected so
+    far plus a [pending] block with a msg_id. Pass that msg_id to
+    kernel_get_output to retrieve the rest. Without timeout, blocks until done.
     """
     if _kernel_client is None:
         return ToolResult(
@@ -352,9 +363,12 @@ async def kernel_execute(code: str, timeout: float | None = None) -> ToolResult:
 async def kernel_get_output(msg_id: str, timeout: float | None = None) -> ToolResult:
     """Retrieve output for a pending execution by msg_id.
 
-    If the execution is still running, optionally waits up to timeout seconds.
-    Returns the cumulative output collected so far, with a [pending] block if
-    still running, or the complete output if done.
+    If still running, waits up to timeout seconds (or returns immediately if
+    timeout is omitted). Returns the same tagged blocks as kernel_execute:
+    [stdout], [stderr], [result], [error], images, and [pending] if not yet done.
+
+    Once complete output is returned, the record is cleaned up — calling again
+    with the same msg_id will return an error.
     """
     if msg_id not in _executions:
         return ToolResult(

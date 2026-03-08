@@ -9,12 +9,12 @@ Built with [FastMCP](https://github.com/PrefectHQ/fastmcp) and [jupyter-client](
 | Tool | Description |
 |------|-------------|
 | `kernel_start(project_dir)` | Start a kernel using the `.venv` from the given project directory |
-| `kernel_stop()` | Stop the running kernel and clean up resources |
-| `kernel_restart()` | Restart the kernel (clears state, preserves connection) |
-| `kernel_status()` | Return kernel status (running, alive, ports, etc.) |
-| `kernel_execute(code, timeout)` | Execute Python code and return stdout, stderr, result, and errors |
-| `kernel_get_output(msg_id, timeout)` | Retrieve output for a pending execution (after timeout) |
-| `kernel_interrupt()` | Interrupt a long-running execution without losing kernel state |
+| `kernel_execute(code, timeout)` | Execute code and return tagged output blocks (`[stdout]`, `[stderr]`, `[result]`, `[error]`, images). On timeout, returns partial output + `[pending]` with a `msg_id` |
+| `kernel_get_output(msg_id, timeout)` | Retrieve remaining output for a timed-out execution. Auto-cleans up once complete |
+| `kernel_interrupt()` | Send SIGINT to cancel a long-running execution without losing kernel state |
+| `kernel_restart()` | Restart the kernel, clearing all variables and state |
+| `kernel_stop()` | Stop the kernel and clean up resources |
+| `kernel_status()` | Return kernel status: running, alive, project_dir, connection_file, pending_executions, ports |
 
 ## Installation
 
