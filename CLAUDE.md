@@ -31,8 +31,6 @@ Single module server (`ipykernel_mcp/server.py`) using FastMCP's async lifespan 
 - Image extraction from MIME bundles supports PNG and JPEG, returned as MCP `ImageContent`
 - Cleanup runs via FastMCP lifespan on shutdown
 
-**Prompts:** `run_code`, `debug_error`, `explore_project` — templates for common LLM workflows.
-
 ## Testing
 
 Tests use `pytest-asyncio` with `asyncio_mode = "auto"`. The `clean_kernel_state` autouse fixture ensures no kernel leaks between tests. Tests use the repo's own `.venv` as the target project (requires `ipykernel` in dev deps).

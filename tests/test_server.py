@@ -62,6 +62,7 @@ async def test_status_after_start():
         assert data["running"] is True
         assert data["alive"] is True
         assert data["project_dir"] == PROJECT_DIR
+        assert "connection_file" in data
         assert "shell_port" in data
 
 
@@ -377,38 +378,60 @@ async def test_status_pending_count():
         assert status.data["pending_executions"] == 1
 
 
-# -- Instructions & prompts ---------------------------------------------------
+# -- clear_output handling ----------------------------------------------------
+
+
+async def test_clear_output_immediate():
+    """clear_output(wait=False) should discard prior stdout."""
+    async with Client(mcp) as client:
+        await client.call_tool("kernel_start", {"project_dir": PROJECT_DIR})
+        code = (
+            "from IPython.display import clear_output\n"
+            "print('old')\n"
+            "clear_output(wait=False)\n"
+            "print('new')"
+        )
+        result = await client.call_tool("kernel_execute", {"code": code})
+        stdout_blocks = [
+            b
+            for b in result.content
+            if b.type == "text" and b.text.startswith("[stdout]")
+        ]
+        assert len(stdout_blocks) == 1
+        assert "old" not in stdout_blocks[0].text
+        assert "new" in stdout_blocks[0].text
+
+
+async def test_clear_output_wait():
+    """clear_output(wait=True) defers the clear until the next output."""
+    async with Client(mcp) as client:
+        await client.call_tool("kernel_start", {"project_dir": PROJECT_DIR})
+        # Simulate tqdm-like pattern: print, clear(wait=True), print replacement
+        code = (
+            "from IPython.display import clear_output\n"
+            "for i in range(5):\n"
+            "    clear_output(wait=True)\n"
+            "    print(f'step {i}')\n"
+        )
+        result = await client.call_tool("kernel_execute", {"code": code})
+        stdout_blocks = [
+            b
+            for b in result.content
+            if b.type == "text" and b.text.startswith("[stdout]")
+        ]
+        assert len(stdout_blocks) == 1
+        # Only the final iteration should survive
+        assert "step 4" in stdout_blocks[0].text
+        assert "step 0" not in stdout_blocks[0].text
+
+
+# -- Instructions -------------------------------------------------------------
 
 
 def test_server_instructions():
     assert mcp.instructions
     assert "kernel_start" in mcp.instructions
     assert "kernel_get_output" in mcp.instructions
-
-
-async def test_list_prompts():
-    async with Client(mcp) as client:
-        prompts = await client.list_prompts()
-        names = {p.name for p in prompts}
-        assert "run_code" in names
-        assert "debug_error" in names
-        assert "explore_project" in names
-
-
-async def test_run_code_prompt():
-    async with Client(mcp) as client:
-        result = await client.get_prompt("run_code", {"code": "1+1"})
-        assert result.messages
-        assert any("1+1" in m.content.text for m in result.messages)
-
-
-async def test_debug_error_prompt():
-    async with Client(mcp) as client:
-        result = await client.get_prompt(
-            "debug_error", {"code": "1/0", "error": "ZeroDivisionError"}
-        )
-        assert result.messages
-        assert any("1/0" in m.content.text for m in result.messages)
 
 
 # -- Content blocks (images, mixed output) ------------------------------------

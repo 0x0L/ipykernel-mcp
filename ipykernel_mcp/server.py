@@ -20,6 +20,7 @@ class ExecutionRecord:
     result: str | None = None
     error: dict | None = None
     image_blocks: list[ImageContent] = field(default_factory=list)
+    pending_clear: bool = False
     done: bool = False
     done_event: asyncio.Event = field(default_factory=asyncio.Event)
 
@@ -81,6 +82,26 @@ async def _iopub_reader() -> None:
         record = _executions[msg_id]
         msg_type = msg["msg_type"]
         content = msg["content"]
+
+        if msg_type == "clear_output":
+            if content.get("wait", False):
+                record.pending_clear = True
+            else:
+                record.stdout = ""
+                record.stderr = ""
+                record.image_blocks.clear()
+            continue
+
+        # Apply deferred clear before any new output
+        if record.pending_clear and msg_type in (
+            "stream",
+            "display_data",
+            "execute_result",
+        ):
+            record.stdout = ""
+            record.stderr = ""
+            record.image_blocks.clear()
+            record.pending_clear = False
 
         if msg_type == "stream":
             if content["name"] == "stdout":
@@ -187,6 +208,7 @@ async def kernel_status() -> dict:
         "running": True,
         "alive": await _kernel_manager.is_alive(),
         "project_dir": _project_dir,
+        "connection_file": _kernel_manager.connection_file,
         "python": _kernel_manager._kernel_spec.argv[0]
         if _kernel_manager._kernel_spec
         else None,
@@ -356,42 +378,6 @@ async def kernel_get_output(msg_id: str, timeout: float | None = None) -> ToolRe
     if complete:
         del _executions[msg_id]
     return _build_tool_result(record, msg_id=msg_id, complete=complete)
-
-
-# -- Prompts ------------------------------------------------------------------
-
-
-@mcp.prompt
-def run_code(code: str) -> str:
-    """Execute Python code and explain the output."""
-    return (
-        f"Run the following code using the `kernel_execute` tool, then explain the output "
-        f"(stdout, result, and any errors):\n\n```python\n{code}\n```"
-    )
-
-
-@mcp.prompt
-def debug_error(code: str, error: str) -> str:
-    """Debug a piece of code that produces an error."""
-    return (
-        f"The following code produces an error:\n\n```python\n{code}\n```\n\n"
-        f"Error:\n```\n{error}\n```\n\n"
-        f"Diagnose the root cause, fix the code, and re-run it with the `kernel_execute` "
-        f"tool to verify the fix works."
-    )
-
-
-@mcp.prompt
-def explore_project(project_dir: str) -> str:
-    """Start a kernel and explore a Python project."""
-    return (
-        f"Start a kernel for the project at `{project_dir}` using `kernel_start`, "
-        f"then explore it:\n"
-        f"1. List the files (`import os; os.listdir('.')`).\n"
-        f"2. Check installed packages (`import pkg_resources; "
-        f"[d.project_name for d in pkg_resources.working_set]`).\n"
-        f"3. Summarize what the project does based on its structure and dependencies."
-    )
 
 
 def main() -> None:
