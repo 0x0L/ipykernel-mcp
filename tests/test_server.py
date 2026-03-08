@@ -24,20 +24,20 @@ async def clean_kernel_state():
 
 async def test_status_no_kernel():
     async with Client(mcp) as client:
-        result = await client.call_tool("status", {})
+        result = await client.call_tool("kernel_status", {})
         assert result.data == {"running": False}
 
 
 async def test_start_kernel_nonexistent_dir():
     async with Client(mcp) as client:
-        result = await client.call_tool("start_kernel", {"project_dir": "/nonexistent"})
+        result = await client.call_tool("kernel_start", {"project_dir": "/nonexistent"})
         assert "Error" in result.data
         assert "not a directory" in result.data
 
 
 async def test_start_kernel_no_venv(tmp_path):
     async with Client(mcp) as client:
-        result = await client.call_tool("start_kernel", {"project_dir": str(tmp_path)})
+        result = await client.call_tool("kernel_start", {"project_dir": str(tmp_path)})
         assert "Error" in result.data
         assert "no venv found" in result.data
 
@@ -47,7 +47,7 @@ async def test_start_kernel_no_venv(tmp_path):
 
 async def test_start_kernel():
     async with Client(mcp) as client:
-        result = await client.call_tool("start_kernel", {"project_dir": PROJECT_DIR})
+        result = await client.call_tool("kernel_start", {"project_dir": PROJECT_DIR})
         assert "Kernel started" in result.data
         assert ".venv/bin/python" in result.data
         assert "connection_file:" in result.data
@@ -56,8 +56,8 @@ async def test_start_kernel():
 
 async def test_status_after_start():
     async with Client(mcp) as client:
-        await client.call_tool("start_kernel", {"project_dir": PROJECT_DIR})
-        result = await client.call_tool("status", {})
+        await client.call_tool("kernel_start", {"project_dir": PROJECT_DIR})
+        result = await client.call_tool("kernel_status", {})
         data = result.data
         assert data["running"] is True
         assert data["alive"] is True
@@ -67,26 +67,26 @@ async def test_status_after_start():
 
 async def test_double_start_rejected():
     async with Client(mcp) as client:
-        await client.call_tool("start_kernel", {"project_dir": PROJECT_DIR})
-        result = await client.call_tool("start_kernel", {"project_dir": PROJECT_DIR})
+        await client.call_tool("kernel_start", {"project_dir": PROJECT_DIR})
+        result = await client.call_tool("kernel_start", {"project_dir": PROJECT_DIR})
         assert "Error" in result.data
         assert "already running" in result.data
 
 
 async def test_cleanup_resets_state():
     async with Client(mcp) as client:
-        await client.call_tool("start_kernel", {"project_dir": PROJECT_DIR})
+        await client.call_tool("kernel_start", {"project_dir": PROJECT_DIR})
         await _cleanup()
-        result = await client.call_tool("status", {})
+        result = await client.call_tool("kernel_status", {})
         assert result.data == {"running": False}
 
 
 async def test_start_after_cleanup():
     """Can start a new kernel after cleaning up the previous one."""
     async with Client(mcp) as client:
-        await client.call_tool("start_kernel", {"project_dir": PROJECT_DIR})
+        await client.call_tool("kernel_start", {"project_dir": PROJECT_DIR})
         await _cleanup()
-        result = await client.call_tool("start_kernel", {"project_dir": PROJECT_DIR})
+        result = await client.call_tool("kernel_start", {"project_dir": PROJECT_DIR})
         assert "Kernel started" in result.data
 
 
@@ -95,35 +95,35 @@ async def test_start_after_cleanup():
 
 async def test_stop_kernel_no_kernel():
     async with Client(mcp) as client:
-        result = await client.call_tool("stop_kernel", {})
+        result = await client.call_tool("kernel_stop", {})
         assert "Error" in result.data
         assert "no kernel is running" in result.data
 
 
 async def test_stop_kernel():
     async with Client(mcp) as client:
-        await client.call_tool("start_kernel", {"project_dir": PROJECT_DIR})
-        result = await client.call_tool("stop_kernel", {})
+        await client.call_tool("kernel_start", {"project_dir": PROJECT_DIR})
+        result = await client.call_tool("kernel_stop", {})
         assert "Kernel stopped" in result.data
-        status = await client.call_tool("status", {})
+        status = await client.call_tool("kernel_status", {})
         assert status.data["running"] is False
 
 
 async def test_restart_kernel_no_kernel():
     async with Client(mcp) as client:
-        result = await client.call_tool("restart_kernel", {})
+        result = await client.call_tool("kernel_restart", {})
         assert "Error" in result.data
         assert "no kernel is running" in result.data
 
 
 async def test_restart_kernel():
     async with Client(mcp) as client:
-        await client.call_tool("start_kernel", {"project_dir": PROJECT_DIR})
+        await client.call_tool("kernel_start", {"project_dir": PROJECT_DIR})
         # Set a variable, restart, verify it's gone
-        await client.call_tool("execute", {"code": "x = 42"})
-        result = await client.call_tool("restart_kernel", {})
+        await client.call_tool("kernel_execute", {"code": "x = 42"})
+        result = await client.call_tool("kernel_restart", {})
         assert "Kernel restarted" in result.data
-        result = await client.call_tool("execute", {"code": "x"})
+        result = await client.call_tool("kernel_execute", {"code": "x"})
         error_blocks = [
             b
             for b in result.content
@@ -146,12 +146,12 @@ async def test_interrupt_no_kernel():
 async def test_interrupt_kernel():
     """Interrupting a long sleep should produce a KeyboardInterrupt error."""
     async with Client(mcp) as client:
-        await client.call_tool("start_kernel", {"project_dir": PROJECT_DIR})
+        await client.call_tool("kernel_start", {"project_dir": PROJECT_DIR})
         # Start a long sleep, then interrupt it
         import asyncio
 
         exec_task = asyncio.create_task(
-            client.call_tool("execute", {"code": "import time; time.sleep(60)"})
+            client.call_tool("kernel_execute", {"code": "import time; time.sleep(60)"})
         )
         # Give the kernel a moment to start executing
         await asyncio.sleep(1)
@@ -173,15 +173,15 @@ async def test_interrupt_kernel():
 
 async def test_execute_no_kernel():
     async with Client(mcp) as client:
-        result = await client.call_tool("execute", {"code": "1+1"})
+        result = await client.call_tool("kernel_execute", {"code": "1+1"})
         assert len(result.content) == 1
         assert "No kernel running" in result.content[0].text
 
 
 async def test_execute_print():
     async with Client(mcp) as client:
-        await client.call_tool("start_kernel", {"project_dir": PROJECT_DIR})
-        result = await client.call_tool("execute", {"code": 'print("hello")'})
+        await client.call_tool("kernel_start", {"project_dir": PROJECT_DIR})
+        result = await client.call_tool("kernel_execute", {"code": 'print("hello")'})
         stdout_blocks = [
             b
             for b in result.content
@@ -193,8 +193,8 @@ async def test_execute_print():
 
 async def test_execute_expression():
     async with Client(mcp) as client:
-        await client.call_tool("start_kernel", {"project_dir": PROJECT_DIR})
-        result = await client.call_tool("execute", {"code": "2 + 2"})
+        await client.call_tool("kernel_start", {"project_dir": PROJECT_DIR})
+        result = await client.call_tool("kernel_execute", {"code": "2 + 2"})
         result_blocks = [
             b
             for b in result.content
@@ -206,8 +206,8 @@ async def test_execute_expression():
 
 async def test_execute_error():
     async with Client(mcp) as client:
-        await client.call_tool("start_kernel", {"project_dir": PROJECT_DIR})
-        result = await client.call_tool("execute", {"code": "1/0"})
+        await client.call_tool("kernel_start", {"project_dir": PROJECT_DIR})
+        result = await client.call_tool("kernel_execute", {"code": "1/0"})
         error_blocks = [
             b
             for b in result.content
@@ -223,9 +223,9 @@ async def test_execute_error():
 
 async def test_execute_stderr():
     async with Client(mcp) as client:
-        await client.call_tool("start_kernel", {"project_dir": PROJECT_DIR})
+        await client.call_tool("kernel_start", {"project_dir": PROJECT_DIR})
         result = await client.call_tool(
-            "execute", {"code": 'import sys; print("err", file=sys.stderr)'}
+            "kernel_execute", {"code": 'import sys; print("err", file=sys.stderr)'}
         )
         stderr_blocks = [
             b
@@ -241,7 +241,7 @@ async def test_execute_stderr():
 
 def test_server_instructions():
     assert mcp.instructions
-    assert "start_kernel" in mcp.instructions
+    assert "kernel_start" in mcp.instructions
 
 
 async def test_list_prompts():
@@ -275,7 +275,7 @@ async def test_debug_error_prompt():
 async def test_execute_display_data_image():
     """display(Image(...)) should produce an ImageContent block."""
     async with Client(mcp) as client:
-        await client.call_tool("start_kernel", {"project_dir": PROJECT_DIR})
+        await client.call_tool("kernel_start", {"project_dir": PROJECT_DIR})
         code = (
             "from IPython.display import display, Image\n"
             "import base64\n"
@@ -284,7 +284,7 @@ async def test_execute_display_data_image():
             "'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4z8BQDwAEgAF/pooBPQAAAABJRU5ErkJggg==')\n"
             "display(Image(data=png, format='png'))"
         )
-        result = await client.call_tool("execute", {"code": code})
+        result = await client.call_tool("kernel_execute", {"code": code})
         # No stdout block expected
         stdout_blocks = [
             b
@@ -302,7 +302,7 @@ async def test_execute_display_data_image():
 async def test_execute_mixed_output():
     """Printing text AND displaying an image should produce both block types."""
     async with Client(mcp) as client:
-        await client.call_tool("start_kernel", {"project_dir": PROJECT_DIR})
+        await client.call_tool("kernel_start", {"project_dir": PROJECT_DIR})
         code = (
             "from IPython.display import display, Image\n"
             "import base64\n"
@@ -312,7 +312,7 @@ async def test_execute_mixed_output():
             "display(Image(data=png, format='png'))\n"
             "print('after image')"
         )
-        result = await client.call_tool("execute", {"code": code})
+        result = await client.call_tool("kernel_execute", {"code": code})
         # stdout block has the combined stdout
         stdout_blocks = [
             b

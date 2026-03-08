@@ -8,11 +8,12 @@ Built with [FastMCP](https://github.com/PrefectHQ/fastmcp) and [jupyter-client](
 
 | Tool | Description |
 |------|-------------|
-| `start_kernel(project_dir)` | Start a kernel using the `.venv` from the given project directory |
-| `stop_kernel()` | Stop the running kernel and clean up resources |
-| `restart_kernel()` | Restart the kernel (clears state, preserves connection) |
-| `status()` | Return kernel status (running, alive, ports, etc.) |
-| `execute(code, timeout=30)` | Execute Python code and return stdout, stderr, result, and errors |
+| `kernel_start(project_dir)` | Start a kernel using the `.venv` from the given project directory |
+| `kernel_stop()` | Stop the running kernel and clean up resources |
+| `kernel_restart()` | Restart the kernel (clears state, preserves connection) |
+| `kernel_status()` | Return kernel status (running, alive, ports, etc.) |
+| `kernel_execute(code, timeout=30)` | Execute Python code and return stdout, stderr, result, and errors |
+| `kernel_interrupt()` | Interrupt a long-running execution without losing kernel state |
 
 ## Installation
 
@@ -20,7 +21,7 @@ Built with [FastMCP](https://github.com/PrefectHQ/fastmcp) and [jupyter-client](
 uv sync
 ```
 
-The project directory passed to `start_kernel` must contain a `.venv` with `ipykernel` installed.
+The project directory passed to `kernel_start` must contain a `.venv` with `ipykernel` installed.
 
 ## Usage
 
@@ -51,7 +52,7 @@ Or add it to your MCP client configuration:
 npx github:0x0L/jupyter_watch <connection_file>
 ```
 
-The connection file path is printed by `start_kernel` when the kernel starts.
+The connection file path is printed by `kernel_start` when the kernel starts.
 
 ## Development
 

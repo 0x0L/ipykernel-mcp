@@ -26,13 +26,13 @@ mcp = FastMCP(
         "imports, and definitions survive across `execute` calls, so you can build "
         "up state incrementally — just like a notebook.\n"
         "\n"
-        "Call `start_kernel` once with a project directory (must have a .venv with "
-        "ipykernel installed), then call `execute` as many times as needed. Each "
+        "Call `kernel_start` once with a project directory (must have a .venv with "
+        "ipykernel installed), then call `kernel_execute` as many times as needed. Each "
         "call returns stdout, stderr, result (the expression value), and error "
         "(traceback details) as structured output.\n"
         "\n"
-        "Use `restart_kernel` to clear all state. Use `interrupt` to cancel a "
-        "long-running execution without losing state. Use `stop_kernel` to shut "
+        "Use `kernel_restart` to clear all state. Use `kernel_interrupt` to cancel a "
+        "long-running execution without losing state. Use `kernel_stop` to shut "
         "down. Only one kernel runs at a time."
     ),
     lifespan=kernel_lifespan,
@@ -55,7 +55,7 @@ async def _cleanup() -> None:
 
 
 @mcp.tool
-async def start_kernel(project_dir: str) -> str:
+async def kernel_start(project_dir: str) -> str:
     """Start an IPython kernel using the venv from the given project directory.
 
     The project directory must contain a .venv with ipykernel installed.
@@ -108,7 +108,7 @@ async def start_kernel(project_dir: str) -> str:
 
 
 @mcp.tool
-async def status() -> dict:
+async def kernel_status() -> dict:
     """Return the current kernel status."""
     if _kernel_manager is None:
         return {"running": False}
@@ -132,7 +132,7 @@ async def status() -> dict:
 
 
 @mcp.tool
-async def stop_kernel() -> str:
+async def kernel_stop() -> str:
     """Stop the running kernel and clean up resources."""
     if _kernel_manager is None:
         return "Error: no kernel is running."
@@ -141,7 +141,7 @@ async def stop_kernel() -> str:
 
 
 @mcp.tool
-async def restart_kernel() -> str:
+async def kernel_restart() -> str:
     """Restart the running kernel, preserving the connection."""
     if _kernel_manager is None or _kernel_client is None:
         return "Error: no kernel is running."
@@ -183,7 +183,7 @@ def _extract_images(mime_bundle: dict) -> list[ImageContent]:
 
 
 @mcp.tool
-async def execute(code: str, timeout: float | None = None) -> ToolResult:
+async def kernel_execute(code: str, timeout: float | None = None) -> ToolResult:
     """Execute code on the running IPython kernel and return the output.
 
     Returns structured output (stdout, stderr, result, error) and MCP content
@@ -193,7 +193,7 @@ async def execute(code: str, timeout: float | None = None) -> ToolResult:
         return ToolResult(
             content=[
                 TextContent(
-                    type="text", text="No kernel running. Call start_kernel first."
+                    type="text", text="No kernel running. Call kernel_start first."
                 )
             ],
         )
@@ -264,7 +264,7 @@ async def execute(code: str, timeout: float | None = None) -> ToolResult:
 def run_code(code: str) -> str:
     """Execute Python code and explain the output."""
     return (
-        f"Run the following code using the `execute` tool, then explain the output "
+        f"Run the following code using the `kernel_execute` tool, then explain the output "
         f"(stdout, result, and any errors):\n\n```python\n{code}\n```"
     )
 
@@ -275,7 +275,7 @@ def debug_error(code: str, error: str) -> str:
     return (
         f"The following code produces an error:\n\n```python\n{code}\n```\n\n"
         f"Error:\n```\n{error}\n```\n\n"
-        f"Diagnose the root cause, fix the code, and re-run it with the `execute` "
+        f"Diagnose the root cause, fix the code, and re-run it with the `kernel_execute` "
         f"tool to verify the fix works."
     )
 
@@ -284,7 +284,7 @@ def debug_error(code: str, error: str) -> str:
 def explore_project(project_dir: str) -> str:
     """Start a kernel and explore a Python project."""
     return (
-        f"Start a kernel for the project at `{project_dir}` using `start_kernel`, "
+        f"Start a kernel for the project at `{project_dir}` using `kernel_start`, "
         f"then explore it:\n"
         f"1. List the files (`import os; os.listdir('.')`).\n"
         f"2. Check installed packages (`import pkg_resources; "
