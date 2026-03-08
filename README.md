@@ -12,7 +12,8 @@ Built with [FastMCP](https://github.com/PrefectHQ/fastmcp) and [jupyter-client](
 | `kernel_stop()` | Stop the running kernel and clean up resources |
 | `kernel_restart()` | Restart the kernel (clears state, preserves connection) |
 | `kernel_status()` | Return kernel status (running, alive, ports, etc.) |
-| `kernel_execute(code, timeout=30)` | Execute Python code and return stdout, stderr, result, and errors |
+| `kernel_execute(code, timeout)` | Execute Python code and return stdout, stderr, result, and errors |
+| `kernel_get_output(msg_id, timeout)` | Retrieve output for a pending execution (after timeout) |
 | `kernel_interrupt()` | Interrupt a long-running execution without losing kernel state |
 
 ## Installation

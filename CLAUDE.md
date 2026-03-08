@@ -22,7 +22,7 @@ uv run pre-commit install        # Install git hooks (ruff format, ruff check, t
 
 Single module server (`ipykernel_mcp/server.py`) using FastMCP's async lifespan pattern. The server enforces exactly one kernel at a time via module-level globals (`_kernel_manager`, `_kernel_client`, `_project_dir`).
 
-**Tools exposed via MCP:** `kernel_start`, `kernel_execute`, `kernel_status`, `kernel_stop`, `kernel_restart`, `kernel_interrupt`
+**Tools exposed via MCP:** `kernel_start`, `kernel_execute`, `kernel_get_output`, `kernel_status`, `kernel_stop`, `kernel_restart`, `kernel_interrupt`
 
 **Key design decisions:**
 - `kernel_start` locates the `.venv/bin/python` in a given project directory and creates a kernel spec pointing to it — this is how the kernel runs in the project's environment

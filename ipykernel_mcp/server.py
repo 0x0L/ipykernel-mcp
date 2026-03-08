@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import asyncio
 import re
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from fastmcp import FastMCP
@@ -9,6 +11,17 @@ from fastmcp.tools.tool import ToolResult
 from jupyter_client import AsyncKernelClient, AsyncKernelManager
 from jupyter_client.kernelspec import KernelSpec
 from mcp.types import ImageContent, TextContent
+
+
+@dataclass
+class ExecutionRecord:
+    stdout: str = ""
+    stderr: str = ""
+    result: str | None = None
+    error: dict | None = None
+    image_blocks: list[ImageContent] = field(default_factory=list)
+    done: bool = False
+    done_event: asyncio.Event = field(default_factory=asyncio.Event)
 
 
 @lifespan
@@ -31,6 +44,10 @@ mcp = FastMCP(
         "call returns stdout, stderr, result (the expression value), and error "
         "(traceback details) as structured output.\n"
         "\n"
+        "If `kernel_execute` times out, it returns partial output plus a `[pending]` "
+        "block with a `msg_id`. Use `kernel_get_output(msg_id)` to retrieve the "
+        "remaining output once execution completes.\n"
+        "\n"
         "Use `kernel_restart` to clear all state. Use `kernel_interrupt` to cancel a "
         "long-running execution without losing state. Use `kernel_stop` to shut "
         "down. Only one kernel runs at a time."
@@ -41,10 +58,62 @@ mcp = FastMCP(
 _kernel_manager: AsyncKernelManager | None = None
 _kernel_client: AsyncKernelClient | None = None
 _project_dir: str | None = None
+_executions: dict[str, ExecutionRecord] = {}
+_reader_task: asyncio.Task | None = None
+
+
+async def _iopub_reader() -> None:
+    """Background task that routes iopub messages to ExecutionRecords."""
+    assert _kernel_client is not None
+    while True:
+        try:
+            msg = await _kernel_client.get_iopub_msg(timeout=1.0)
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            # queue.Empty on timeout, or other transient errors — just loop
+            continue
+
+        msg_id = msg["parent_header"].get("msg_id")
+        if msg_id is None or msg_id not in _executions:
+            continue
+
+        record = _executions[msg_id]
+        msg_type = msg["msg_type"]
+        content = msg["content"]
+
+        if msg_type == "stream":
+            if content["name"] == "stdout":
+                record.stdout += content["text"]
+            elif content["name"] == "stderr":
+                record.stderr += content["text"]
+        elif msg_type in ("execute_result", "display_data"):
+            data = content["data"]
+            record.image_blocks.extend(_extract_images(data))
+            if msg_type == "execute_result":
+                record.result = data.get("text/plain")
+        elif msg_type == "error":
+            traceback = [_ANSI_ESCAPE.sub("", line) for line in content["traceback"]]
+            record.error = {
+                "ename": content["ename"],
+                "evalue": content["evalue"],
+                "traceback": traceback,
+            }
+        elif msg_type == "status" and content["execution_state"] == "idle":
+            record.done = True
+            record.done_event.set()
 
 
 async def _cleanup() -> None:
-    global _kernel_manager, _kernel_client, _project_dir
+    global _kernel_manager, _kernel_client, _project_dir, _reader_task
+    if _reader_task is not None:
+        _reader_task.cancel()
+        try:
+            await _reader_task
+        except asyncio.CancelledError:
+            pass
+        _reader_task = None
+    _executions.clear()
     if _kernel_client is not None:
         _kernel_client.stop_channels()
         _kernel_client = None
@@ -60,7 +129,7 @@ async def kernel_start(project_dir: str) -> str:
 
     The project directory must contain a .venv with ipykernel installed.
     """
-    global _kernel_manager, _kernel_client, _project_dir
+    global _kernel_manager, _kernel_client, _project_dir, _reader_task
 
     if _kernel_manager is not None:
         return "Error: a kernel is already running. Shut it down first."
@@ -100,6 +169,7 @@ async def kernel_start(project_dir: str) -> str:
     _kernel_manager = km
     _kernel_client = kc
     _project_dir = str(project_path)
+    _reader_task = asyncio.create_task(_iopub_reader())
 
     return (
         f"Kernel started. Python: {venv_python}, cwd: {project_path}, connection_file: {km.connection_file}\n"
@@ -120,6 +190,7 @@ async def kernel_status() -> dict:
         "python": _kernel_manager._kernel_spec.argv[0]
         if _kernel_manager._kernel_spec
         else None,
+        "pending_executions": sum(1 for r in _executions.values() if not r.done),
     }
 
     ci = _kernel_manager.get_connection_info()
@@ -143,14 +214,28 @@ async def kernel_stop() -> str:
 @mcp.tool
 async def kernel_restart() -> str:
     """Restart the running kernel, preserving the connection."""
+    global _reader_task
     if _kernel_manager is None or _kernel_client is None:
         return "Error: no kernel is running."
+
+    # Cancel reader before restart to avoid message contention
+    if _reader_task is not None:
+        _reader_task.cancel()
+        try:
+            await _reader_task
+        except asyncio.CancelledError:
+            pass
+        _reader_task = None
+    _executions.clear()
+
     try:
         await _kernel_manager.restart_kernel(now=True)
         await _kernel_client.wait_for_ready(timeout=60)
     except Exception as exc:
         await _cleanup()
         return f"Error: failed to restart kernel: {exc}"
+
+    _reader_task = asyncio.create_task(_iopub_reader())
     return "Kernel restarted."
 
 
@@ -182,12 +267,41 @@ def _extract_images(mime_bundle: dict) -> list[ImageContent]:
     return images
 
 
+def _build_tool_result(
+    record: ExecutionRecord, *, msg_id: str, complete: bool
+) -> ToolResult:
+    """Build MCP content blocks from an ExecutionRecord."""
+    blocks: list[TextContent | ImageContent] = []
+    if record.stdout:
+        blocks.append(TextContent(type="text", text=f"[stdout]\n{record.stdout}"))
+    if record.stderr:
+        blocks.append(TextContent(type="text", text=f"[stderr]\n{record.stderr}"))
+    blocks.extend(record.image_blocks)
+    if record.result is not None:
+        blocks.append(TextContent(type="text", text=f"[result]\n{record.result}"))
+    if record.error is not None:
+        tb = "\n".join(record.error["traceback"])
+        blocks.append(
+            TextContent(
+                type="text",
+                text=f"[error]\n{record.error['ename']}: {record.error['evalue']}\n{tb}",
+            )
+        )
+    if not complete:
+        blocks.append(TextContent(type="text", text=f"[pending]\nmsg_id: {msg_id}"))
+    return ToolResult(content=blocks)
+
+
 @mcp.tool
 async def kernel_execute(code: str, timeout: float | None = None) -> ToolResult:
     """Execute code on the running IPython kernel and return the output.
 
     Returns structured output (stdout, stderr, result, error) and MCP content
     blocks including images from plots and display calls.
+
+    If timeout is set and execution takes longer, returns partial output with a
+    [pending] block containing a msg_id. Use kernel_get_output to retrieve the
+    remaining output.
     """
     if _kernel_client is None:
         return ToolResult(
@@ -199,62 +313,49 @@ async def kernel_execute(code: str, timeout: float | None = None) -> ToolResult:
         )
 
     msg_id = _kernel_client.execute(code)
+    record = ExecutionRecord()
+    _executions[msg_id] = record
 
-    stdout = ""
-    stderr = ""
-    result = None
-    error = None
-    image_blocks: list[ImageContent] = []
+    try:
+        await asyncio.wait_for(record.done_event.wait(), timeout=timeout)
+    except asyncio.TimeoutError:
+        return _build_tool_result(record, msg_id=msg_id, complete=False)
 
-    while True:
-        msg = await _kernel_client.get_iopub_msg(timeout=timeout)
+    # Completed — clean up and return full result
+    del _executions[msg_id]
+    return _build_tool_result(record, msg_id=msg_id, complete=True)
 
-        # Only process messages from our execution request.
-        if msg["parent_header"].get("msg_id") != msg_id:
-            continue
 
-        msg_type = msg["msg_type"]
-        content = msg["content"]
+@mcp.tool
+async def kernel_get_output(msg_id: str, timeout: float | None = None) -> ToolResult:
+    """Retrieve output for a pending execution by msg_id.
 
-        if msg_type == "stream":
-            if content["name"] == "stdout":
-                stdout += content["text"]
-            elif content["name"] == "stderr":
-                stderr += content["text"]
-        elif msg_type in ("execute_result", "display_data"):
-            data = content["data"]
-            image_blocks.extend(_extract_images(data))
-            if msg_type == "execute_result":
-                result = data.get("text/plain")
-        elif msg_type == "error":
-            traceback = [_ANSI_ESCAPE.sub("", line) for line in content["traceback"]]
-            error = {
-                "ename": content["ename"],
-                "evalue": content["evalue"],
-                "traceback": traceback,
-            }
-        elif msg_type == "status" and content["execution_state"] == "idle":
-            break
-
-    # Build MCP content blocks in order: stdout, stderr, images, result, error
-    blocks: list[TextContent | ImageContent] = []
-    if stdout:
-        blocks.append(TextContent(type="text", text=f"[stdout]\n{stdout}"))
-    if stderr:
-        blocks.append(TextContent(type="text", text=f"[stderr]\n{stderr}"))
-    blocks.extend(image_blocks)
-    if result is not None:
-        blocks.append(TextContent(type="text", text=f"[result]\n{result}"))
-    if error is not None:
-        tb = "\n".join(error["traceback"])
-        blocks.append(
-            TextContent(
-                type="text",
-                text=f"[error]\n{error['ename']}: {error['evalue']}\n{tb}",
-            )
+    If the execution is still running, optionally waits up to timeout seconds.
+    Returns the cumulative output collected so far, with a [pending] block if
+    still running, or the complete output if done.
+    """
+    if msg_id not in _executions:
+        return ToolResult(
+            content=[
+                TextContent(
+                    type="text",
+                    text=f"Error: unknown msg_id '{msg_id}'. It may have already been retrieved.",
+                )
+            ],
         )
 
-    return ToolResult(content=blocks)
+    record = _executions[msg_id]
+
+    if not record.done and timeout is not None:
+        try:
+            await asyncio.wait_for(record.done_event.wait(), timeout=timeout)
+        except asyncio.TimeoutError:
+            pass
+
+    complete = record.done
+    if complete:
+        del _executions[msg_id]
+    return _build_tool_result(record, msg_id=msg_id, complete=complete)
 
 
 # -- Prompts ------------------------------------------------------------------
