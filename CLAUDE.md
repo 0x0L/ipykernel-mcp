@@ -22,10 +22,11 @@ uv run pre-commit install        # Install git hooks (ruff format, ruff check, t
 
 Single module server (`ipykernel_mcp/server.py`) using FastMCP's async lifespan pattern. The server enforces exactly one kernel at a time via module-level globals (`_kernel_manager`, `_kernel_client`, `_project_dir`, `_executions`, `_reader_task`).
 
-**Tools exposed via MCP:** `kernel_start`, `kernel_execute`, `kernel_get_output`, `kernel_status`, `kernel_stop`, `kernel_restart`, `kernel_interrupt`
+**Tools exposed via MCP:** `kernel_discover`, `kernel_start`, `kernel_execute`, `kernel_get_output`, `kernel_status`, `kernel_stop`, `kernel_restart`, `kernel_interrupt`
 
 **Key design decisions:**
-- `kernel_start` locates the `.venv/bin/python` in a given project directory and creates a kernel spec pointing to it — this is how the kernel runs in the project's environment
+- `kernel_discover` lists registered Jupyter kernel specs (via `KernelSpecManager`) and optionally scans a directory for a `.venv` with ipykernel. Returns structured entries with a `name` field used by `kernel_start`
+- `kernel_start(kernel_name)` accepts either a registered spec name (e.g. `"python3"`) or a venv reference (`"venv:/path/to/project"`). For registered specs, it delegates to `AsyncKernelManager(kernel_name=...)`. For venv references, it creates an ad-hoc `KernelSpec` pointing to `.venv/bin/python`
 - A background `_iopub_reader` task (started after `wait_for_ready`) continuously routes iopub messages into `ExecutionRecord` objects keyed by `msg_id` in `_executions`. This ensures output is never lost, even when `kernel_execute` times out
 - `kernel_execute` waits on `ExecutionRecord.done_event`; on timeout it returns partial output with a `[pending]` block containing the `msg_id`. `kernel_get_output` retrieves the remaining output
 - `kernel_execute` returns structured MCP `ToolResult` content blocks (stdout, stderr, images, results, errors as separate tagged blocks) rather than plain text
