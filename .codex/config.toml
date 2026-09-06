@@ -1,0 +1,13 @@
+[mcp_servers.ipykernel]
+command = "uv"
+args = [
+    "run",
+    "--project", "/Users/xav/src/ipykernel-mcp",
+    "--locked",
+    "--dev",
+    "ipykernel-mcp",
+    "--python", "/Users/xav/src/ipykernel-mcp/.venv/bin/python",
+    "--cwd", "/Users/xav/src/ipykernel-mcp",
+]
+startup_timeout_sec = 60
+tool_timeout_sec = 90

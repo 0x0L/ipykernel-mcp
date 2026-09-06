@@ -1,31 +1,36 @@
 [project]
 name = "ipykernel-mcp"
 version = "0.1.0"
-description = "MCP server for IPython kernel management"
+description = "A persistent Jupyter kernel for MCP"
 readme = "README.md"
 license = "MIT"
 requires-python = ">=3.12"
 dependencies = [
-    "fastmcp>=3.0",
-    "jupyter-client",
+    "anyio>=4.15.1,<5",
+    "fastmcp==4.0.3",
+    "jupyter-client>=8.10.0,<9",
+    "mcp>=2.1.1,<3",
+    "pydantic>=2.13.5,<3",
 ]
 
 [dependency-groups]
 dev = [
-    "ipykernel",
-    "pre-commit>=4.5.1",
-    "pytest",
-    "pytest-asyncio",
-    "ruff>=0.15.2",
-    "ty>=0.0.18",
+    "ipykernel>=7.3.0",
+    "matplotlib>=3.11.1",
+    "pre-commit>=4.6.2",
+    "pytest>=9.1.1",
+    "pytest-asyncio>=1.4.0",
+    "ruff>=0.16.6",
+    "ty>=0.0.78",
 ]
 
 [build-system]
-requires = ["hatchling"]
+requires = ["hatchling>=1.32.0,<2"]
 build-backend = "hatchling.build"
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
+filterwarnings = ["error::fastmcp.exceptions.FastMCPDeprecationWarning"]
 
 [project.scripts]
 ipykernel-mcp = "ipykernel_mcp.server:main"
