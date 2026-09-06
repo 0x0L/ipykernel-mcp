@@ -186,8 +186,72 @@ def test_image_limit_never_returns_corrupt_image():
 def test_event_count_limit():
     r = Execution("id", max_output_blocks=2)
     for _ in range(20):
-        r.append("stdout", "a")
+        r.append("display", "a")
     assert len(r.outputs) == 2
+    assert r.truncated
+
+
+def test_small_stream_chunks_merge_without_exhausting_block_limit():
+    r = Execution("id", max_output_blocks=1, max_text_bytes=2000)
+    for _ in range(1500):
+        r.append("stdout", "x")
+    assert len(r.outputs) == 1
+    assert r.outputs[0].data == "x" * 1500
+    assert r.stored_bytes == r.text_bytes == 1500
+    assert not r.truncated
+    r.append("stderr", "separate stream")
+    assert r.truncated
+    assert len(r.outputs) == 1
+    r.consume()
+    r.append("stderr", "new")
+    assert r.outputs[0].data == "new"
+    assert not r.truncated
+
+
+def test_merged_stream_still_respects_unicode_byte_budget():
+    r = Execution("id", max_text_bytes=5)
+    r.append("stdout", "é")
+    r.append("stdout", "éé")
+    assert r.outputs[0].data == "éé"
+    assert r.text_bytes == r.stored_bytes == 4
+    assert r.truncated
+
+
+def test_oversized_png_falls_back_to_fitting_jpeg():
+    r = Execution("id", max_bytes=8)
+    r.handle_message(
+        "display_data",
+        {
+            "data": {
+                "image/png": "A" * 12,
+                "image/jpeg": "anBlZw==",
+                "text/plain": "image",
+            }
+        },
+    )
+    assert len(r.outputs) == 1
+    assert r.outputs[0].mime == "image/jpeg"
+    assert not r.truncated
+
+
+def test_oversized_image_preserves_text_and_reports_omission():
+    r = Execution("id", max_bytes=100)
+    r.handle_message(
+        "display_data",
+        {"data": {"image/png": "A" * 104, "text/plain": "useful description"}},
+    )
+    assert "useful description" in text(r)
+    assert "Image omitted" in text(r)
+    assert r.truncated
+    assert all(block.mime is None for block in r.outputs)
+
+
+def test_oversized_image_text_uses_last_available_bytes():
+    r = Execution("id", max_bytes=4)
+    r.handle_message(
+        "display_data", {"data": {"image/png": "A" * 8, "text/plain": "plot"}}
+    )
+    assert r.outputs[0].data == "plot"
     assert r.truncated
 
 

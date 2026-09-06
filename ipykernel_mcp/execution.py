@@ -83,7 +83,16 @@ class Execution:
         if not mime:
             remaining = min(remaining, self.max_text_bytes - self.text_bytes)
         encoded = data.encode()
-        if len(self.outputs) >= self.max_output_blocks or remaining <= 0:
+        merge = (
+            not mime
+            and kind in ("stdout", "stderr")
+            and bool(self.outputs)
+            and self.outputs[-1].kind == kind
+            and self.outputs[-1].mime is None
+        )
+        if (
+            not merge and len(self.outputs) >= self.max_output_blocks
+        ) or remaining <= 0:
             self.truncated = True
             return
         if len(encoded) > remaining:
@@ -94,20 +103,33 @@ class Execution:
         if not data:
             return
         size = len(data.encode())
-        self.outputs.append(OutputBlock(kind, data, mime))
+        if merge:
+            self.outputs[-1] = OutputBlock(kind, self.outputs[-1].data + data)
+        else:
+            self.outputs.append(OutputBlock(kind, data, mime))
         self.stored_bytes += size
         if not mime:
             self.text_bytes += size
 
     def _display(self, content: dict, kind: str) -> None:
         data = content.get("data", {})
+        omitted_image = False
         for mime in ("image/png", "image/jpeg"):
             if mime in data:
-                self.append(kind, data[mime], mime)
-                return
+                if (
+                    len(data[mime].encode()) <= self.max_bytes - self.stored_bytes
+                    and len(self.outputs) < self.max_output_blocks
+                ):
+                    self.append(kind, data[mime], mime)
+                    return
+                omitted_image = True
+        if omitted_image:
+            self.truncated = True
         if "text/plain" in data:
             self.append(kind, data["text/plain"])
-        elif data:
+        if omitted_image:
+            self.append("display", "Image omitted: unread output limit exceeded.")
+        elif data and "text/plain" not in data:
             self.append(
                 "display",
                 "Unsupported display formats: " + ", ".join(data),

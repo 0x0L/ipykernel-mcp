@@ -33,8 +33,8 @@ async def test_status_counts_blocks_without_consuming_and_drain_groups(workspace
     running.append("stderr", "pending")
     state = workspace.status()
     assert state == workspace.status()
-    assert state["unread_output_count"] == 4
-    assert [e["unread_output_count"] for e in state["executions"]] == [3, 0, 1]
+    assert state["unread_output_count"] == 3
+    assert [e["unread_output_count"] for e in state["executions"]] == [2, 0, 1]
     result = await workspace.drain_output()
     assert [e["execution_id"] for e in result.structured_content["executions"]] == [
         "first",
@@ -113,3 +113,53 @@ async def test_failed_response_build_does_not_partially_drain(workspace, monkeyp
     assert set(workspace.executions) == {"first", "second"}
     assert first.outputs[0].data == "keep"
     assert not first.delivered
+
+
+async def test_drain_budget_leaves_whole_results_for_subsequent_calls(
+    workspace, monkeypatch
+):
+    import ipykernel_mcp.kernel as kernel_module
+
+    monkeypatch.setattr(kernel_module, "MAX_DRAIN_BYTES", 3000)
+    for key in ("first", "second", "third"):
+        execution = add(workspace, key)
+        execution.append("display", "A" * 1200, "image/png")
+        execution.finish("succeeded")
+    for key in ("first", "second", "third"):
+        result = await workspace.drain_output()
+        assert [e["execution_id"] for e in result.structured_content["executions"]] == [
+            key
+        ]
+        assert result.content[1].data == "A" * 1200
+        assert key not in workspace.executions
+        assert all(e.stored_bytes == 1200 for e in workspace.executions.values())
+    assert (await workspace.drain_output()).structured_content == {"executions": []}
+
+
+async def test_drain_budget_accounts_for_json_escaping(workspace, monkeypatch):
+    import ipykernel_mcp.kernel as kernel_module
+
+    monkeypatch.setattr(kernel_module, "MAX_DRAIN_BYTES", 3000)
+    for key in ("first", "second"):
+        execution = add(workspace, key)
+        execution.append("stdout", "\x00" * 200)
+        execution.finish("succeeded")
+    result = await workspace.drain_output()
+    assert len(result.structured_content["executions"]) == 1
+    assert "second" in workspace.executions
+
+
+async def test_single_result_exceeding_drain_budget_is_not_consumed(
+    workspace, monkeypatch
+):
+    import ipykernel_mcp.kernel as kernel_module
+
+    monkeypatch.setattr(kernel_module, "MAX_DRAIN_BYTES", 1024)
+    execution = add(workspace, "first", done=True)
+    with pytest.raises(KernelError, match="read_output"):
+        await workspace.drain_output()
+    assert not execution.delivered
+    assert "first" in workspace.executions
+    assert (await workspace.read_output("first")).structured_content[
+        "status"
+    ] == "succeeded"

@@ -8,3 +8,5 @@ dist/
 .ruff_cache/
 .claude/
 .DS_Store
+.mcp.json
+.codex/config.toml

@@ -34,6 +34,8 @@ clears variables. Save results to files when they need to outlive the session.
 
 See the [practical examples](docs/usage.md) for successive computations, CSV analysis,
 image display, plotting, and polling long-running work.
+See [contributing](CONTRIBUTING.md) for development and release checks, and the
+[changelog](CHANGELOG.md) for unreleased changes.
 
 For tool selection and recovery, start with the
 [agent workflow guide](docs/usage.md#choose-the-next-tool). The same essential
@@ -97,6 +99,9 @@ jupyter kernelspec list
 
 Use absolute paths in MCP configuration. Relative paths are interpreted from the
 server's working directory. Code runs with the local user's permissions.
+This server does not sandbox executed code: it can access files, environment
+variables, subprocesses, and the network wherever the kernel process can.
+Use a suitably isolated environment when working with untrusted code or data.
 
 If startup reports a missing kernel, check that its registration is visible to
 the same user and environment that launch the MCP server. User registrations
@@ -113,7 +118,7 @@ starts its kernel automatically; there is no notebook to create or start tool to
 |---|---|
 | `execute(code, wait_seconds=10)` | Run source in the persistent Jupyter kernel |
 | `read_output(execution_id, wait_seconds=0)` | Return and consume one execution's unread output and outcome |
-| `drain_output()` | Return and consume all pending output and completed outcomes |
+| `drain_output()` | Return and consume a bounded batch of pending output and outcomes |
 | `interrupt()` | Ask the currently running code to stop, preserving kernel state |
 | `reset()` | Start a fresh kernel using the same Jupyter kernelspec and initial working directory |
 | `status()` | Inspect the kernel, pending execution IDs, and unread output counts |
@@ -178,12 +183,15 @@ acknowledgement; a response lost in transit cannot be replayed.
 }
 ```
 
-Counts measure buffered text/image blocks before adjacent streams are merged for
-presentation. They exclude internal Jupyter messages and execution metadata. A
+Counts measure buffered text/image blocks after consecutive messages from the same
+stream are merged. They exclude internal Jupyter messages and execution metadata. A
 completed execution may have zero blocks and still have an undelivered outcome.
 
-Use `drain_output()` to immediately retrieve all pending output and completed
-outcomes. Content is grouped by execution, with an `[execution]` metadata header
+Use `drain_output()` to immediately retrieve a batch of pending output and completed
+outcomes. Each response has an 8 MiB JSON budget and contains whole execution
+results; excess results remain unread. Repeat until `executions` is empty to
+finish draining currently available results. Content is grouped by execution,
+with an `[execution]` metadata header
 before each group's text and images. Structured metadata contains an `executions`
 list of outcomes. A drain consumes what it returns and removes completed records.
 Running executions remain tracked; output arriving afterward is available for the
@@ -223,7 +231,10 @@ invalid tool arguments, a busy kernel, and expired IDs are MCP tool errors.
   `unread_output_count`, and any kernel `error`. Normal
   states are `ready` and `busy`; `resetting` and `unavailable` describe recovery.
 - Output supports plain text and PNG/JPEG images, including display updates as new
-  output. HTML/widgets are not rendered. All output arriving after its execution
+  output. If PNG does not fit, available JPEG and plain-text representations in
+  the same display bundle are tried next; the server does not convert images.
+  An omitted image sets `truncated=true`, with an explanatory notice when space
+  permits. HTML/widgets and audio are not rendered. All output arriving after its execution
   has completed is ignored, including late display updates.
 - Each execution buffers at most **64 KiB of unread text, 4 MiB of unread payload,
   and 1,000 unread output blocks**. Exceeding a limit drops excess output and sets
@@ -238,20 +249,20 @@ invalid tool arguments, a busy kernel, and expired IDs are MCP tool errors.
 
 ### Use this checkout in an agent
 
-The repository includes project MCP configuration for
-[Claude Code](https://code.claude.com/docs/en/mcp) in `.mcp.json` and
-[Codex](https://learn.chatgpt.com/docs/extend/mcp?surface=cli) in `.codex/config.toml`.
-Both run the local source using:
+Copy the [Claude Code example](examples/mcp.json) to `.mcp.json`, or merge the
+[Codex example](examples/codex-config.toml) into `.codex/config.toml`.
+Both local configuration files are ignored by Git. Replace the example absolute
+paths with your checkout and desired working directory. Both examples run:
 
 ```bash
-uv run --project /Users/xav/src/ipykernel-mcp --locked --dev ipykernel-mcp \
+uv run --project /absolute/path/to/ipykernel-mcp --locked --dev ipykernel-mcp \
   --kernel python3 \
-  --cwd /Users/xav/src/ipykernel-mcp
+  --cwd /absolute/path/to/project
 ```
 
-These files point at this checkout's absolute path. If you clone elsewhere, update
-the paths in both files. `--dev` includes `ipykernel` and Matplotlib in the project's
-environment, so the plotting examples work with this checkout.
+`--dev` includes `ipykernel` and Matplotlib in the project's environment.
+The selected `python3` kernelspec must point to that environment to use those
+libraries; otherwise register it under a unique name as described above.
 Restart the MCP connection after changing source code. Claude Code may ask to
 approve the project server; Codex loads project configuration for trusted projects.
 
@@ -271,6 +282,7 @@ uv run ruff format --check
 uv run ruff check
 uv run ty check
 uv run pytest tests/ -v
+uv build
 ```
 
 `server.py` defines the MCP tools and CLI. `schemas.py` defines their validated
@@ -280,7 +292,8 @@ validates the configured kernelspec name and constructs its Jupyter kernel manag
 Tests cover real Python kernels, output ordering, cancellation, recovery, and stdio.
 R and Julia execution are not covered by the automated suite; display and interrupt
 behavior depend on the installed kernel implementation.
-CI runs Python 3.12–3.14. Windows is not covered by CI.
+CI runs Python 3.12–3.14 on Linux, builds the source distribution and wheel, and
+smoke-tests the installed wheel's CLI. Windows and macOS are not covered by CI.
 
 FastMCP is pinned to **4.0.3**; all dependencies and development tools are resolved
 in `uv.lock`. CI and pre-commit use those locked tools. To update dependencies,

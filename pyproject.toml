@@ -13,6 +13,11 @@ dependencies = [
     "pydantic>=2.13.5,<3",
 ]
 
+[project.urls]
+Repository = "https://github.com/0x0L/ipykernel-mcp"
+Documentation = "https://github.com/0x0L/ipykernel-mcp/blob/main/README.md"
+Issues = "https://github.com/0x0L/ipykernel-mcp/issues"
+
 [dependency-groups]
 dev = [
     "ipykernel>=7.3.0",

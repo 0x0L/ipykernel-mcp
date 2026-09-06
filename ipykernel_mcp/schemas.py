@@ -31,7 +31,7 @@ class ExecutionSummary(BaseModel):
 class PendingExecution(ExecutionSummary):
     unread_output_count: int = Field(
         ge=0,
-        description="Buffered text/image blocks before stream merging; excludes metadata. Zero can still mean a pending final outcome.",
+        description="Buffered text/image blocks after adjacent stream merging; excludes metadata. Zero can still mean a pending final outcome.",
     )
 
 
@@ -46,7 +46,7 @@ class ExecutionMetadata(ExecutionSummary):
 
 class DrainOutput(BaseModel):
     executions: list[ExecutionMetadata] = Field(
-        description="Consumed execution outcomes in content-group order, including silent completions. Empty means no pending output/outcomes to return; running code may still exist."
+        description="Consumed execution outcomes in content-group order, including silent completions. Each drain has an 8 MiB JSON budget; excess whole results remain unread. Repeat until empty to drain available results. Empty means no pending output/outcomes to return; running code may still exist."
     )
 
 

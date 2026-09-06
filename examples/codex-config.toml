@@ -2,12 +2,12 @@
 command = "uv"
 args = [
     "run",
-    "--project", "/Users/xav/src/ipykernel-mcp",
+    "--project", "/absolute/path/to/ipykernel-mcp",
     "--locked",
     "--dev",
     "ipykernel-mcp",
     "--kernel", "python3",
-    "--cwd", "/Users/xav/src/ipykernel-mcp",
+    "--cwd", "/absolute/path/to/project",
 ]
 startup_timeout_sec = 60
 tool_timeout_sec = 90

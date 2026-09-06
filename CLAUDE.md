@@ -71,7 +71,8 @@ their final outcome is returned, including silent completions. No cursors or rep
 Build responses before committing consumption, with no await between those steps.
 Concurrent consumers must never receive the same output or final outcome twice;
 a waiter whose final outcome was consumed elsewhere receives a tool error.
-`drain_output` groups pending output by execution and includes silent completed
+`drain_output` batches whole execution results within an 8 MiB JSON budget,
+leaving excess results unread. Repeat until executions is empty. It groups output by execution and includes silent completed
 outcomes and truncation notices. It keeps active records and leaves future output
 unread. `status` counts unread text/image blocks globally and per execution, excluding
 metadata and internal Jupyter messages. Consuming output resets byte/block budgets

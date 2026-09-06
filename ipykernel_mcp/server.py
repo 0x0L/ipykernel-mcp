@@ -77,13 +77,17 @@ interrupt requests a stop; only a later result confirms the outcome.
 Output supports text and PNG/JPEG images. Use the kernel's printing and display
 facilities. In Python, use `from IPython.display import Image, display` followed by
 `display(Image(filename="/absolute/path/image.png"))` to return a local image.
+Oversized images fall back to available JPEG or text representations in the same
+display bundle; no conversion is performed. Omitted images report truncation.
 HTML/widgets are not rendered. Display clears are ignored; updates append output.
 Late output after execution completion is ignored, so await work inside the cell.
 Unread buffers per execution are limited to 64 KiB text, 4 MiB payload, and 1,000
 blocks. truncated reports dropped output since the previous read; reads replenish
 capacity. Unread completed results expire after 10 minutes; at most 16 executions
 are tracked, evicting oldest completed results first. Consumed results are removed
-immediately. Save needed results in your response or files; there is no replay.
+immediately. drain_output returns whole results within an 8 MiB JSON budget;
+repeat until executions is empty. Excess results remain unread. Save needed results
+in your response or files; there is no replay.
 """
 
 
@@ -179,13 +183,13 @@ def create_server(kernel: Kernel) -> FastMCP:
         Output is returned once, without a cursor or replay. Do not race this call
         with another read or drain_output: a waiter whose final outcome was consumed
         elsewhere gets a tool error. Unknown/consumed/expired IDs also error; inspect
-        status for remaining work. Reads preserve kernel variables. To retrieve all
-        pending results at once, use drain_output.
+        status for remaining work. Reads preserve kernel variables. To retrieve
+        pending results in batches, use drain_output.
         """
         return await _call_kernel(kernel.read_output(execution_id, wait_seconds))
 
     @server.tool(
-        title="Drain all pending output",
+        title="Drain pending output batch",
         output_schema=DrainOutput.model_json_schema(),
         annotations=ToolAnnotations(
             read_only_hint=False,
@@ -195,9 +199,11 @@ def create_server(kernel: Kernel) -> FastMCP:
         ),
     )
     async def drain_output() -> ToolResult:
-        """Retrieve and consume all pending output and completed outcomes without waiting.
+        """Retrieve and consume a bounded batch of pending output and outcomes without waiting.
 
-        Use to collect every pending result; use read_output to target one ID.
+        Repeat until executions is empty to collect pending results; use read_output
+        to target one ID. Each response has an 8 MiB JSON budget; whole execution
+        results that do not fit remain unread for the next call.
         Each content group starts with an [execution] header identifying its ID
         and outcome, followed by text/images. Structured executions lists the same
         metadata in group order. Silent completed outcomes and truncation notices
@@ -276,7 +282,7 @@ def create_server(kernel: Kernel) -> FastMCP:
 
         executions includes active work and completed outcomes not yet consumed or
         expired; it is not execution history or a variable inventory. Counts measure
-        buffered text/image blocks before stream merging, excluding metadata and
+        buffered text/image blocks after adjacent stream merging, excluding metadata and
         internal Jupyter messages. Zero unread_output_count does not imply completion
         or no pending outcomes. Use read_output for one ID or drain_output for all.
         kernel_name and cwd are fixed startup settings; code may have changed its current

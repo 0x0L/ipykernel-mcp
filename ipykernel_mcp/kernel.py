@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import math
 import time
@@ -21,6 +22,7 @@ DEFAULT_WAIT_SECONDS = 10.0
 MAX_WAIT_SECONDS = 60.0
 RESULT_RETENTION_SECONDS = 600.0
 MAX_RETAINED_EXECUTIONS = 16
+MAX_DRAIN_BYTES = 8 * 1024 * 1024
 
 
 class KernelError(ValueError):
@@ -295,7 +297,7 @@ class Kernel:
             self.executions.pop(execution.execution_id, None)
 
     async def drain_output(self) -> ToolResult:
-        """Atomically return pending output and outcomes, grouped by execution."""
+        """Atomically return a bounded batch of whole execution results."""
         self._prune_results()
         pending = [
             execution
@@ -304,7 +306,37 @@ class Kernel:
         ]
         # Build the entire response before releasing anything. No await permits
         # channel readers, other consumers, or cancellation to interleave here.
-        results = [execution.to_tool_result() for execution in pending]
+        results = []
+        selected = []
+        # Account for JSON escaping and both content and structured metadata.
+        # Reserve space for the outer response envelope and list separators.
+        remaining = MAX_DRAIN_BYTES - 1024
+        for execution in pending:
+            result = execution.to_tool_result()
+            size = len(
+                json.dumps(
+                    {
+                        "content": [
+                            block.model_dump(
+                                mode="json", by_alias=True, exclude_none=True
+                            )
+                            for block in result.content
+                        ],
+                        "structuredContent": result.structured_content,
+                    },
+                    ensure_ascii=True,
+                ).encode()
+            )
+            if size > remaining:
+                if not results:
+                    raise KernelError(
+                        "Execution exceeds the drain response budget. "
+                        "Use read_output(execution_id) to retrieve it."
+                    )
+                break
+            remaining -= size
+            results.append(result)
+            selected.append(execution)
         metadata = DrainOutput.model_validate(
             {"executions": [result.structured_content for result in results]}
         ).model_dump()
@@ -312,7 +344,7 @@ class Kernel:
             content=[block for result in results for block in result.content],
             structured_content=metadata,
         )
-        for execution in pending:
+        for execution in selected:
             self._consume(execution)
         return result
 

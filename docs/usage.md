@@ -3,7 +3,7 @@
 These examples show code an agent can submit to the `execute` tool. Each Python
 block is a separate call; run the blocks within each example in order. Variables
 remain available between calls in the same server session. The MCP entry in the
-repository configuration is named `jupyter-python`.
+example configurations is named `jupyter-python`.
 These examples require a Python kernel. For R, Julia, or another configured
 language, use its syntax and display facilities with the same six MCP tools.
 Keep follow-up calls on the same server: variables and execution IDs belong to
@@ -20,7 +20,7 @@ such as `read_output` are MCP requests, not functions to execute inside the kern
 | Calculate, load data, or reuse a variable | Call `execute` with code. |
 | `execute` or `read_output` returns `running` | Call `read_output` with that execution ID and a positive `wait_seconds`, such as 10. Do not resubmit the code. |
 | A final outcome is returned | Use its output; the execution record is now removed. |
-| Collect all pending results | Call `drain_output`; it also returns silent completions. |
+| Collect all pending results | Repeat `drain_output` until `executions` is empty; it also returns silent completions. |
 | Find active work or pending results | Call `status`; it does not consume output. |
 | Stop work while keeping variables | Call `interrupt`, then read the targeted execution's eventual outcome. |
 | A code exception occurs | Inspect the error and fix the code; earlier variable/file changes may remain. |
@@ -123,7 +123,10 @@ photographs, and saved charts. Reading bytes alone does not display an image;
 
 `IPython.display` is provided by IPython, a dependency of ipykernel; it is not part
 of Python's standard library. PNG and JPEG are image formats. HTML and interactive
-widgets are not rendered by this server.
+widgets and audio are not rendered by this server. If an image exceeds the unread
+buffer budget, the server tries another supported representation from the same
+display bundle, then text; it does not resize or convert images. Save or resize
+large images in the kernel before displaying them when necessary.
 
 ## Generate and refine a plot
 
@@ -193,11 +196,14 @@ kernel; `reset()` clears the kernel and starts fresh.
 ## Inspect and clear pending output
 
 Call `status()` to see the global `unread_output_count` and the count for each
-pending execution. These count text/image blocks, not internal Jupyter messages.
-Use `drain_output()` to retrieve all currently unread output, grouped by execution,
+pending execution. These count text/image blocks after adjacent messages from the
+same stream are merged, excluding internal Jupyter messages.
+Use `drain_output()` to retrieve a batch of unread output, grouped by execution,
 plus completed outcomes even for code that printed nothing. The drain frees returned
 payloads and removes completed records. Running code keeps going; its future output
-is available to the next call. An empty drain returns `{"executions": []}`.
+is available to the next call. Responses have an 8 MiB JSON budget and include
+whole execution results; excess results remain unread. Repeat until `executions`
+is empty to finish draining available results. An empty drain returns `{"executions": []}`.
 
 Output returned directly by `execute` is consumed too. Reads cannot be replayed,
 so use one consumer per execution. If another call consumes a final outcome while
