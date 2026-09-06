@@ -4,7 +4,9 @@
 
 Help an MCP agent work incrementally: retain loaded data, reuse functions and
 intermediate results, inspect local images, and refine plots across calls. The
-README introduces these workflows; `docs/usage.md` contains runnable examples.
+README covers human-facing setup and usage; `docs/usage.md` contains example
+conversations. Keep tool-call protocols, polling, and result-consumption details
+in MCP server instructions, tool docstrings, and schemas, not the README.
 Keep examples aligned with the six-tool contract and identify optional libraries
 that must be installed in the configured kernel environment. Image interpretation
 depends on the client's support for image tool results and the model's vision
