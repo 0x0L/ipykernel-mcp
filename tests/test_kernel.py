@@ -27,7 +27,11 @@ def output(result):
 
 @pytest.fixture
 async def kernel():
-    kernel = Kernel(KernelConfig.from_paths("python3", PROJECT))
+    kernel = Kernel(
+        KernelConfig.from_paths(
+            str(Path(sys.executable).with_name("jupyter")), "python3", PROJECT
+        )
+    )
     try:
         await kernel.open()
         yield kernel
@@ -272,7 +276,11 @@ async def test_idle_interrupt_is_noop(kernel):
 
 
 async def test_simultaneous_opens_create_one_kernel():
-    kernel = Kernel(KernelConfig.from_paths("python3", PROJECT))
+    kernel = Kernel(
+        KernelConfig.from_paths(
+            str(Path(sys.executable).with_name("jupyter")), "python3", PROJECT
+        )
+    )
     try:
         results = await asyncio.gather(
             kernel.open(), kernel.open(), return_exceptions=True

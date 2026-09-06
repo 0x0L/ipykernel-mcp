@@ -22,7 +22,7 @@ including nested schema fields, rather than testing source wording alone.
 ## Product contract
 
 One configured Jupyter kernelspec, one persistent Jupyter kernel, one active execution.
-`--kernel` is required; `--cwd` defaults to the server's working directory. The server
+`--jupyter` and `--kernel` are required; `--cwd` defaults to the server's working directory. The server
 opens that kernel in its lifespan and closes it on shutdown. Configuration cannot change
 through MCP tools. There is no environment discovery or public start/stop operation.
 
@@ -44,10 +44,12 @@ uv run pre-commit install
 
 ## Architecture
 
-- `server.py`: six MCP tools, required kernelspec configuration, lifespan ownership.
+- `server.py`: six MCP tools, required Jupyter executable and kernelspec configuration, lifespan ownership.
 - `schemas.py`: validated response models shared with MCP output schemas.
-- `interpreter.py`: immutable `KernelConfig`, kernelspec preflight, and the
-  Jupyter kernel manager adapter. Kernel environments are selected by kernelspecs.
+- `interpreter.py`: immutable `KernelConfig`, CLI kernelspec preflight, and the
+  Jupyter launcher adapter. Discovery and launch use the configured executable.
+- `launcher_config.py`: private config executed by that Jupyter installation;
+  relays lifecycle requests to its manager and exits on kernel death.
 - `kernel.py`: `Kernel` owns the process, readers, lifecycle lock, and retained
   executions. `open`/`close` belong to the server lifespan; `reset` replaces the process
   using the same configuration, including after a crash.

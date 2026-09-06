@@ -11,10 +11,10 @@ from queue import Empty
 
 from anyio import CancelScope
 from fastmcp.tools import ToolResult
-from jupyter_client import AsyncKernelClient, AsyncKernelManager
+from jupyter_client import AsyncKernelClient
 
 from .execution import Execution
-from .interpreter import KernelConfig, check_kernel, create_kernel_manager
+from .interpreter import JupyterKernelManager, KernelConfig, create_kernel_manager
 from .schemas import DrainOutput, ExecutionStatus
 
 logger = logging.getLogger(__name__)
@@ -48,7 +48,7 @@ class Kernel:
                 "Result retention and execution capacity must be positive."
             )
         self.config = config
-        self.manager: AsyncKernelManager | None = None
+        self.manager: JupyterKernelManager | None = None
         self.client: AsyncKernelClient | None = None
         self.state = "closed"
         self.error: dict[str, str] | None = None
@@ -173,7 +173,6 @@ class Kernel:
     async def _start_kernel(self) -> None:
         self.error = None
         try:
-            await check_kernel(self.config.kernel_name)
             self.manager = create_kernel_manager(self.config)
             await self.manager.start_kernel(cwd=str(self.config.cwd))
             self.client = self.manager.client()
@@ -352,6 +351,7 @@ class Kernel:
         self._prune_results()
         return {
             "state": self.state,
+            "jupyter": str(self.config.jupyter),
             "kernel_name": self.config.kernel_name,
             "cwd": str(self.config.cwd),
             "active_execution_id": self.active_execution_id,

@@ -1,7 +1,7 @@
 # Contributing
 
 For bug reports, include the server version or commit, operating system, Python
-version, kernelspec language, MCP client, and a minimal reproduction. Include the
+version, configured Jupyter executable, kernelspec language, MCP client, and a minimal reproduction. Include the
 expected behavior, actual execution metadata, and relevant logs. Remove credentials,
 private file contents, and other sensitive data before sharing a report.
 
@@ -55,7 +55,7 @@ GitHub Actions are pinned to commit SHAs, with Dependabot proposing updates.
    documentation/license files and accidental local configuration or private data.
 4. Smoke-test the wheel in an isolated environment with `uv run --isolated
    --no-project --with /absolute/path/to/package.whl ipykernel-mcp --help`, then
-   verify an MCP connection with an explicitly registered kernel.
+   verify an MCP connection with an explicit Jupyter executable and kernel.
 5. Tag the validated commit and describe changes and compatibility limitations
    in its GitHub release notes. Publishing is a separate maintainer action;
    the CI workflow does not publish packages or releases.

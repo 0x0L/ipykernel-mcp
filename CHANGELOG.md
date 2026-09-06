@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Require `--jupyter` and `--kernel`; discover and launch through the selected
+  Jupyter CLI, independent of the MCP server environment. Report the launcher
+  path in status and retain it across reset. Relay lifecycle requests to Jupyter.
+
 - Use one configured persistent Jupyter kernel with six tools: `execute`,
   `read_output`, `drain_output`, `interrupt`, `reset`, and `status`.
 - Consume returned output, retain unfinished work across cancelled waits, and
@@ -16,8 +20,9 @@
 
 ### Compatibility
 
-The six-tool interface replaces the earlier `kernel_*` tools. `--kernel` replaces
-`--python`; register an interpreter as a Jupyter kernelspec. Server `--project`,
+The six-tool interface replaces the earlier `kernel_*` tools. `--jupyter` and `--kernel` replace
+`--python`; choose a Jupyter executable and a kernel visible to it. Existing
+`--kernel` configurations must add `--jupyter`. Server `--project`,
 environment discovery, explicit start/stop tools, `timeout`/`msg_id` aliases, and
 replay cursors are removed. Returned results cannot be replayed. See the
 [README](README.md) for the current contract and migration notes.

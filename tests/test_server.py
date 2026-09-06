@@ -19,7 +19,11 @@ def metadata(result):
 
 
 def configured_kernel():
-    return Kernel(KernelConfig.from_paths("python3", PROJECT))
+    return Kernel(
+        KernelConfig.from_paths(
+            str(Path(sys.executable).with_name("jupyter")), "python3", PROJECT
+        )
+    )
 
 
 async def test_six_tools_with_required_arguments_and_no_aliases():
@@ -87,6 +91,8 @@ async def test_stdio_explicit_interpreter_smoke():
         args=[
             "-m",
             "ipykernel_mcp.server",
+            "--jupyter",
+            str(Path(sys.executable).with_name("jupyter")),
             "--kernel",
             "python3",
             "--cwd",
@@ -103,7 +109,15 @@ async def test_stdio_explicit_interpreter_smoke():
         )
 
 
-@pytest.mark.parametrize("args", [[], ["--project", PROJECT]])
+@pytest.mark.parametrize(
+    "args",
+    [
+        [],
+        ["--project", PROJECT],
+        ["--kernel", "python3"],
+        ["--jupyter", str(Path(sys.executable).with_name("jupyter"))],
+    ],
+)
 async def test_cli_rejects_missing_or_invalid_interpreter(args):
     process = await asyncio.create_subprocess_exec(
         sys.executable,
@@ -135,6 +149,12 @@ async def test_tool_annotations_and_output_schemas():
             assert tool.output_schema is not None
             assert tool.output_schema["type"] == "object"
             assert tool.output_schema["required"]
+        for name in ("status", "reset"):
+            launcher_field = tools[name].output_schema["properties"]["jupyter"]
+            assert launcher_field["type"] == "string"
+            assert "discovery and launch" in launcher_field["description"]
+        status = metadata(await client.call_tool("status", {}))
+        assert status["jupyter"] == str(Path(sys.executable).with_name("jupyter"))
         schema = tools["execute"].output_schema
         assert schema == tools["read_output"].output_schema
         assert schema["properties"]["status"]["enum"] == [
@@ -273,7 +293,11 @@ async def test_discovery_identifies_non_python_kernel(monkeypatch):
     from types import SimpleNamespace
     from unittest.mock import AsyncMock, Mock
 
-    kernel = Kernel(KernelConfig.from_paths("analysis", PROJECT))
+    kernel = Kernel(
+        KernelConfig.from_paths(
+            str(Path(sys.executable).with_name("jupyter")), "analysis", PROJECT
+        )
+    )
     kernel.manager = Mock(kernel_spec=SimpleNamespace(language="julia"))
     monkeypatch.setattr(kernel, "open", AsyncMock())
     monkeypatch.setattr(kernel, "close", AsyncMock())

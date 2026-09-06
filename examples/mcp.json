@@ -8,6 +8,7 @@
         "--locked",
         "--dev",
         "ipykernel-mcp",
+        "--jupyter", "/absolute/path/to/ipykernel-mcp/.venv/bin/jupyter",
         "--kernel", "python3",
         "--cwd", "/absolute/path/to/project"
       ]

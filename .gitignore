@@ -10,3 +10,4 @@ dist/
 .DS_Store
 .mcp.json
 .codex/config.toml
+/output/

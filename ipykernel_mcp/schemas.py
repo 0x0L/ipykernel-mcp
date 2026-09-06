@@ -54,6 +54,9 @@ class WorkspaceStatus(BaseModel):
     state: WorkspaceState = Field(
         description="ready: may execute; busy: read/interrupt active work; starting/resetting: transition; unavailable: inspect error and reset; closed: kernel shut down."
     )
+    jupyter: str = Field(
+        description="Configured Jupyter executable path used for discovery and launch, fixed for this server lifetime."
+    )
     kernel_name: str = Field(
         description="Configured installed Jupyter kernel name, fixed for this server's lifetime."
     )
@@ -80,5 +83,5 @@ class InterruptResult(BaseModel):
         description="Execution targeted by the interrupt, or null if no code was active. Read this ID for its eventual outcome."
     )
     interrupt_sent: bool = Field(
-        description="True if an interrupt signal was sent, not confirmation that code stopped. False means no active execution needed interruption."
+        description="True if Jupyter delivered an interrupt request, not confirmation that code stopped. False means no active execution needed interruption."
     )

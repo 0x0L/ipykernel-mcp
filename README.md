@@ -44,25 +44,20 @@ and input/output field descriptions so clients receive it during discovery.
 
 ## Configuration
 
-Point `--kernel` at an installed Jupyter kernelspec. Use `--cwd` for the working
-directory; it defaults to the server's working directory. Configure one MCP server
-entry per language/kernel you want available.
+Both `--jupyter` and `--kernel` are required. Pass an absolute path to the
+Jupyter executable and a kernel name visible to that installation. `--cwd` sets
+the initial working directory and defaults to the server's working directory.
+Configure one MCP server entry per Jupyter/kernel combination.
 
-You need `uv`, an MCP client that can launch a local stdio server, and a registered
-kernel for your language. A *kernelspec* is Jupyter's launch recipe: it identifies
-the executable and environment to use. Installing this server does not install
-language kernels or analysis libraries.
-
-For a Python environment, install and register its kernel first:
+You need `uv`, an MCP client that launches a local stdio server, and a Jupyter
+installation with `jupyter-client` and the desired language kernel. For Python:
 
 ```bash
-uv pip install --python /path/to/project/.venv/bin/python ipykernel
-/path/to/project/.venv/bin/python -m ipykernel install --user --name project-python --display-name "Project Python"
+uv pip install --python /path/to/project/.venv/bin/python jupyter-client ipykernel
+/path/to/project/.venv/bin/jupyter kernelspec list
 ```
 
-Then use `--kernel project-python` in the configuration below. `python3` works if
-that kernelspec is already available to the server, but may select a different
-environment. A unique name makes the intended environment explicit.
+Configure that executable directly; shell activation is unnecessary:
 
 ```json
 {
@@ -72,7 +67,8 @@ environment. A unique name makes the intended environment explicit.
       "args": [
         "--from", "git+https://github.com/0x0L/ipykernel-mcp",
         "ipykernel-mcp",
-        "--kernel", "project-python",
+        "--jupyter", "/path/to/project/.venv/bin/jupyter",
+        "--kernel", "python3",
         "--cwd", "/path/to/project"
       ]
     }
@@ -80,33 +76,40 @@ environment. A unique name makes the intended environment explicit.
 }
 ```
 
-The server starts the configured Jupyter kernel when it connects and closes it when it
-disconnects. Find installed names with `jupyter kernelspec list`; a missing kernel fails
-at startup with a diagnostic. The kernel and initial working directory are fixed for that
-server's lifetime. The server's own Python environment is independent of the selected
-kernel's environment.
+The server runs the selected executable's `kernelspec list --json` for discovery
+and `kernel --kernel NAME` for launch, then connects using Jupyter's connection
+file. Its own Python environment does not discover or launch language kernels.
+The selected Jupyter installation does not need this MCP package installed.
+Missing executables or kernels fail startup with a diagnostic.
 
-For R or Julia, install and register IRkernel or IJulia first. Duplicate the entry,
-name it `jupyter-r` or `jupyter-julia`, and replace the kernel argument with its
-installed name. Names such as `ir` and `julia-1.11` are examples; use the name shown
-on your machine. Each entry gets an isolated kernel process and state, even when
-two entries use the same language. Variables and execution IDs cannot cross entries;
-files in a shared working directory can.
+A *kernelspec* is Jupyter's launch recipe: its executable and environment determine
+where code runs. It may point to an environment different from the Jupyter
+installation. To register a separate Python environment explicitly:
 
 ```bash
-jupyter kernelspec list
+/path/to/other/.venv/bin/python -m ipykernel install --user --name project-python --display-name "Project Python"
+/path/to/project/.venv/bin/jupyter kernelspec list
 ```
 
+Then select `--kernel project-python`. Install analysis libraries in the kernel's
+environment. For R or Julia, install and register IRkernel or IJulia, then use the
+name reported by the configured Jupyter executable. Each server entry owns an
+isolated kernel process and state, even when entries use the same language.
+Variables and execution IDs cannot cross entries; files can be shared on disk.
+
+The server starts the launcher and kernel on connection and closes both on
+shutdown. A private Jupyter config relays interrupt and shutdown requests to
+Jupyter's kernel manager. Interrupts respect the kernelspec's signal/message mode;
+kernel death is reported without automatic restart. Reset reuses the same
+executable, kernel name, and initial directory. These settings are fixed for the
+server's lifetime and cannot be changed through tools.
+
 Use absolute paths in MCP configuration. Relative paths are interpreted from the
-server's working directory. Code runs with the local user's permissions.
+server's working directory. The launcher inherits the server's environment
+variables, including Jupyter path overrides; no shell activation script is run.
 This server does not sandbox executed code: it can access files, environment
 variables, subprocesses, and the network wherever the kernel process can.
 Use a suitably isolated environment when working with untrusted code or data.
-
-If startup reports a missing kernel, check that its registration is visible to
-the same user and environment that launch the MCP server. User registrations
-(`--user`) are useful when the server runs in a separate `uvx` environment.
-If an import fails, install the library in the kernel's environment.
 
 After connecting, ask: “Use jupyter-python to set `values = [10, 20, 30]`, then
 compute their mean in a second call.” The result should be `20.0`. The server
@@ -120,7 +123,7 @@ starts its kernel automatically; there is no notebook to create or start tool to
 | `read_output(execution_id, wait_seconds=0)` | Return and consume one execution's unread output and outcome |
 | `drain_output()` | Return and consume a bounded batch of pending output and outcomes |
 | `interrupt()` | Ask the currently running code to stop, preserving kernel state |
-| `reset()` | Start a fresh kernel using the same Jupyter kernelspec and initial working directory |
+| `reset()` | Start a fresh kernel using the same Jupyter executable, kernelspec, and initial working directory |
 | `status()` | Inspect the kernel, pending execution IDs, and unread output counts |
 
 The following code examples use Python. Use the selected language's syntax for
@@ -172,6 +175,7 @@ acknowledgement; a response lost in transit cannot be replayed.
 ```json
 {
   "state": "ready",
+  "jupyter": "/path/to/project/.venv/bin/jupyter",
   "kernel_name": "project-python",
   "cwd": "/path/to/project",
   "active_execution_id": null,
@@ -226,7 +230,7 @@ invalid tool arguments, a busy kernel, and expired IDs are MCP tool errors.
   see its eventual outcome. `reset()` replaces the kernel and clears all variables.
 - A crashed kernel or failed output connection makes the kernel unavailable and
   resolves active waits. Call `reset()` to recover. Code is never silently rerun.
-- `status()` reports kernel `state`, configured `kernel_name` and `cwd`,
+- `status()` reports kernel `state`, configured `jupyter`, `kernel_name`, and `cwd`,
   `active_execution_id`, pending `executions`, global and per-execution
   `unread_output_count`, and any kernel `error`. Normal
   states are `ready` and `busy`; `resetting` and `unavailable` describe recovery.
@@ -256,28 +260,36 @@ paths with your checkout and desired working directory. Both examples run:
 
 ```bash
 uv run --project /absolute/path/to/ipykernel-mcp --locked --dev ipykernel-mcp \
+  --jupyter /absolute/path/to/ipykernel-mcp/.venv/bin/jupyter \
   --kernel python3 \
   --cwd /absolute/path/to/project
 ```
 
 `--dev` includes `ipykernel` and Matplotlib in the project's environment.
-The selected `python3` kernelspec must point to that environment to use those
-libraries; otherwise register it under a unique name as described above.
-Restart the MCP connection after changing source code. Claude Code may ask to
+Select its `.venv/bin/jupyter` and `python3` kernel to use those libraries, or
+point `--jupyter` at another installation. An explicitly registered kernelspec
+can still select a different interpreter.
+When upgrading an existing local config, add `"--jupyter", "/absolute/path/to/ipykernel-mcp/.venv/bin/jupyter"`
+to the server's `args` in `.mcp.json` or `.codex/config.toml`, alongside
+`"--kernel", "python3"`. Keep any existing per-tool approval settings.
+After restarting the MCP connection, call `status()` and check that `jupyter`
+reports your chosen executable and `kernel_name` reports `python3`.
+
+Restart the MCP connection after changing source code or launch arguments. Claude Code may ask to
 approve the project server; Codex loads project configuration for trusted projects.
 
 [`uv run --project`](https://docs.astral.sh/uv/reference/cli/#uv-run) selects a local
 project directory and runs its editable installation using `uv.lock`.
 `uv run file:///path/to/project` does not launch a project package.
 To use the checkout from another project's MCP configuration, keep `--project`
-pointing here and change `--kernel` and `--cwd` for that project's installed kernel
+pointing here and change `--jupyter`, `--kernel`, and `--cwd` for that project's installed kernel
 and working directory.
 
 ### Checks
 
 ```bash
 uv sync --locked --dev
-uv run ipykernel-mcp --kernel python3 --cwd /path/to/project
+uv run ipykernel-mcp --jupyter "$PWD/.venv/bin/jupyter" --kernel python3 --cwd /path/to/project
 uv run ruff format --check
 uv run ruff check
 uv run ty check
@@ -288,7 +300,8 @@ uv build
 `server.py` defines the MCP tools and CLI. `schemas.py` defines their validated
 response contracts. `kernel.py` owns the Jupyter kernel process and
 execution lifecycle. `execution.py` collects output and outcomes. `interpreter.py`
-validates the configured kernelspec name and constructs its Jupyter kernel manager.
+validates the Jupyter executable and manages CLI discovery, launch, and connection.
+`launcher_config.py` relays lifecycle requests inside the selected Jupyter process.
 Tests cover real Python kernels, output ordering, cancellation, recovery, and stdio.
 R and Julia execution are not covered by the automated suite; display and interrupt
 behavior depend on the installed kernel implementation.
@@ -314,9 +327,10 @@ These conventions follow FastMCP's [tool documentation](https://gofastmcp.com/se
 [versioning guidance](https://gofastmcp.com/getting-started/installation).
 The stdio transport and the existing polling contract require no task extension.
 
-This API replaces the previous `kernel_*` tools. Configure `--kernel` and optional
+This API replaces the previous `kernel_*` tools. Configure required `--jupyter` and `--kernel`, plus optional
 `--cwd`; use the six tools above. The server's `--python` option has been replaced
-by `--kernel`: register the old interpreter as a kernelspec and pass its name.
+by `--jupyter` and `--kernel`: select the desired Jupyter installation and a
+kernelspec visible to it. Existing configurations must add `--jupyter`.
 `--project`, discovery, explicit
 start/stop tools, and the `timeout`/`msg_id` aliases have been removed.
 

@@ -50,9 +50,10 @@ including execute output. Completed IDs are removed on return; reads cannot repl
 Use status to inspect pending IDs/counts, drain_output to consume all pending results,
 interrupt to request a stop, and reset for a fresh kernel. One execution at a time.
 
-This server runs the configured Jupyter kernel. Its language, installed libraries,
-and initial directory are configured at startup; no start or environment-selection
-call is needed.
+This server discovers and launches its kernel through the configured Jupyter
+executable. That installation resolves the configured kernelspec, which determines
+the language and available libraries. The executable, kernel name, and initial
+directory are fixed at startup; no start or environment-selection call is needed.
 Use this server for incremental calculations, loading data once and refining an
 analysis, or generating images for inspection. Choose the server for the intended
 language. Each server has separate variables and execution IDs; send follow-up
@@ -109,7 +110,8 @@ def create_server(kernel: Kernel) -> FastMCP:
             spec = kernel.manager.kernel_spec
             assert spec is not None
             server.instructions = INSTRUCTIONS + (
-                f"\nConfigured kernel: {kernel.config.kernel_name!r}. "
+                f"\nConfigured Jupyter executable: {str(kernel.config.jupyter)!r}. "
+                f"Configured kernel: {kernel.config.kernel_name!r}. "
                 f"Language: {spec.language!r}. "
                 f"Initial working directory: {str(kernel.config.cwd)!r}.\n"
                 "Write code in this language; Python examples apply only to Python kernels."
@@ -231,9 +233,10 @@ def create_server(kernel: Kernel) -> FastMCP:
         """Request that running code stop while preserving the existing Jupyter kernel.
 
         Use to stop unwanted work without resetting variables. Returns the targeted
-        execution_id and interrupt_sent. A true flag only confirms a signal was
-        sent; code can catch or defer it. Read that ID with read_output to learn
-        the eventual outcome. If no execution is active, returns null and false.
+        execution_id and interrupt_sent. A true flag only confirms Jupyter delivered
+        an interrupt request; code can catch or defer it. Read that ID with
+        read_output to learn the eventual outcome. If no execution is active,
+        returns null and false.
         Partial changes made by code remain. If the kernel is unavailable, use
         reset to recover; reset clears in-memory state.
         """
@@ -249,7 +252,7 @@ def create_server(kernel: Kernel) -> FastMCP:
         ),
     )
     async def reset() -> WorkspaceStatus:
-        """Replace the Jupyter kernel with a fresh one using the same kernelspec and initial cwd.
+        """Replace the Jupyter kernel with a fresh one using the same Jupyter executable, kernelspec, and initial cwd.
 
         Use for an intentional fresh start or to recover an unavailable kernel.
         Cancels active execution and clears all variables, imports, and functions.
@@ -259,7 +262,7 @@ def create_server(kernel: Kernel) -> FastMCP:
         Returns kernel status with pending IDs/counts. Unread output and cancelled
         outcomes from the old kernel remain available until consumed or expired;
         reset does not drain them. Use drain_output to retrieve them. This cannot
-        change the configured kernelspec or initial directory.
+        change the configured Jupyter executable, kernelspec, or initial directory.
         """
         return WorkspaceStatus.model_validate(await _call_kernel(kernel.reset()))
 
@@ -285,8 +288,9 @@ def create_server(kernel: Kernel) -> FastMCP:
         buffered text/image blocks after adjacent stream merging, excluding metadata and
         internal Jupyter messages. Zero unread_output_count does not imply completion
         or no pending outcomes. Use read_output for one ID or drain_output for all.
-        kernel_name and cwd are fixed startup settings; code may have changed its current
-        directory since startup. This tool does not inspect current kernel variables.
+        jupyter, kernel_name, and cwd are fixed startup settings; code may have
+        changed its current directory since startup. This tool does not inspect
+        current kernel variables.
         """
         return WorkspaceStatus.model_validate(kernel.status())
 
@@ -295,13 +299,18 @@ def create_server(kernel: Kernel) -> FastMCP:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="A persistent Jupyter kernel for MCP.")
+    parser.add_argument(
+        "--jupyter",
+        required=True,
+        help="Path to the Jupyter executable used for discovery and launch",
+    )
     parser.add_argument("--kernel", required=True, help="Installed Jupyter kernel name")
     parser.add_argument(
         "--cwd", help="Initial working directory (default: server working directory)"
     )
     args = parser.parse_args()
     try:
-        config = KernelConfig.from_paths(args.kernel, args.cwd)
+        config = KernelConfig.from_paths(args.jupyter, args.kernel, args.cwd)
     except InterpreterError as exc:
         parser.error(str(exc))
     try:

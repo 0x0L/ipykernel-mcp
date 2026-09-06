@@ -4,6 +4,11 @@ These examples show code an agent can submit to the `execute` tool. Each Python
 block is a separate call; run the blocks within each example in order. Variables
 remain available between calls in the same server session. The MCP entry in the
 example configurations is named `jupyter-python`.
+Configure required `--jupyter /path/to/env/bin/jupyter` and `--kernel python3`
+arguments before connecting. Discovery and launch use that executable; no shell
+activation is needed. The selected kernelspec determines the code environment.
+`status().jupyter` reports the fixed launcher path; reset reuses it.
+
 These examples require a Python kernel. For R, Julia, or another configured
 language, use its syntax and display facilities with the same six MCP tools.
 Keep follow-up calls on the same server: variables and execution IDs belong to
