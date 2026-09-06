@@ -46,6 +46,22 @@ Point `--kernel` at an installed Jupyter kernelspec. Use `--cwd` for the working
 directory; it defaults to the server's working directory. Configure one MCP server
 entry per language/kernel you want available.
 
+You need `uv`, an MCP client that can launch a local stdio server, and a registered
+kernel for your language. A *kernelspec* is Jupyter's launch recipe: it identifies
+the executable and environment to use. Installing this server does not install
+language kernels or analysis libraries.
+
+For a Python environment, install and register its kernel first:
+
+```bash
+uv pip install --python /path/to/project/.venv/bin/python ipykernel
+/path/to/project/.venv/bin/python -m ipykernel install --user --name project-python --display-name "Project Python"
+```
+
+Then use `--kernel project-python` in the configuration below. `python3` works if
+that kernelspec is already available to the server, but may select a different
+environment. A unique name makes the intended environment explicit.
+
 ```json
 {
   "mcpServers": {
@@ -54,7 +70,7 @@ entry per language/kernel you want available.
       "args": [
         "--from", "git+https://github.com/0x0L/ipykernel-mcp",
         "ipykernel-mcp",
-        "--kernel", "python3",
+        "--kernel", "project-python",
         "--cwd", "/path/to/project"
       ]
     }
@@ -68,9 +84,12 @@ at startup with a diagnostic. The kernel and initial working directory are fixed
 server's lifetime. The server's own Python environment is independent of the selected
 kernel's environment.
 
-For example, add a second entry with `"--kernel", "ir"` after installing IRkernel, or
-`"--kernel", "julia-1.11"` after installing IJulia. Each entry gets an isolated kernel
-process and state.
+For R or Julia, install and register IRkernel or IJulia first. Duplicate the entry,
+name it `jupyter-r` or `jupyter-julia`, and replace the kernel argument with its
+installed name. Names such as `ir` and `julia-1.11` are examples; use the name shown
+on your machine. Each entry gets an isolated kernel process and state, even when
+two entries use the same language. Variables and execution IDs cannot cross entries;
+files in a shared working directory can.
 
 ```bash
 jupyter kernelspec list
@@ -78,6 +97,15 @@ jupyter kernelspec list
 
 Use absolute paths in MCP configuration. Relative paths are interpreted from the
 server's working directory. Code runs with the local user's permissions.
+
+If startup reports a missing kernel, check that its registration is visible to
+the same user and environment that launch the MCP server. User registrations
+(`--user`) are useful when the server runs in a separate `uvx` environment.
+If an import fails, install the library in the kernel's environment.
+
+After connecting, ask: “Use jupyter-python to set `values = [10, 20, 30]`, then
+compute their mean in a second call.” The result should be `20.0`. The server
+starts its kernel automatically; there is no notebook to create or start tool to call.
 
 ## Six tools
 
@@ -90,6 +118,9 @@ server's working directory. Code runs with the local user's permissions.
 | `reset()` | Start a fresh kernel using the same Jupyter kernelspec and initial working directory |
 | `status()` | Inspect the kernel, pending execution IDs, and unread output counts |
 
+The following code examples use Python. Use the selected language's syntax for
+other kernels; the six MCP tools and polling workflow are the same.
+
 ```text
 execute(code="values = [10, 20, 30]")
 execute(code="sum(values) / len(values)")
@@ -97,7 +128,7 @@ execute(code="sum(values) / len(values)")
 
 The second call returns `20.0`. Only one execution can run at a time. A busy error
 includes the active execution ID; read its output or interrupt it before submitting
-more code. `input()` is unsupported and fails promptly.
+more code. Interactive stdin is disabled; provide inputs directly in code.
 
 ## Waiting and consuming output
 
@@ -136,7 +167,7 @@ acknowledgement; a response lost in transit cannot be replayed.
 ```json
 {
   "state": "ready",
-  "python": "/path/to/project/.venv/bin/python",
+  "kernel_name": "project-python",
   "cwd": "/path/to/project",
   "active_execution_id": null,
   "unread_output_count": 2,
@@ -170,7 +201,10 @@ Execution outcomes are:
 | `running` | Code has not finished |
 | `succeeded` | Code completed normally |
 | `failed` | Code raised an exception, or execution could not complete |
-| `cancelled` | Execution was interrupted, the kernel was reset, or the server closed |
+| `cancelled` | Kernel reset, server shutdown, or a reported `KeyboardInterrupt` |
+
+Other kernels may report an interruption as `failed`; inspect the error details.
+An interrupt request alone does not determine the execution outcome.
 
 Failures and cancellations include `error: {type, message}`. Tracebacks appear in
 the readable output. An exception from executed code is an execution outcome;
@@ -178,13 +212,13 @@ invalid tool arguments, a busy kernel, and expired IDs are MCP tool errors.
 
 ## Recovery and limits
 
-- Cancelling a tool call stops waiting; it does not stop Python. Use `status()` to
+- Cancelling a tool call stops waiting; it does not stop code. Use `status()` to
   find the execution, then `read_output` or `interrupt`.
 - `interrupt()` sends a signal that code may catch or defer. Read the execution to
-  see its eventual outcome. `reset()` replaces Python and clears all variables.
+  see its eventual outcome. `reset()` replaces the kernel and clears all variables.
 - A crashed kernel or failed output connection makes the kernel unavailable and
   resolves active waits. Call `reset()` to recover. Code is never silently rerun.
-- `status()` reports kernel `state`, configured `python` and `cwd`,
+- `status()` reports kernel `state`, configured `kernel_name` and `cwd`,
   `active_execution_id`, pending `executions`, global and per-execution
   `unread_output_count`, and any kernel `error`. Normal
   states are `ready` and `busy`; `resetting` and `unavailable` describe recovery.
@@ -242,8 +276,10 @@ uv run pytest tests/ -v
 `server.py` defines the MCP tools and CLI. `schemas.py` defines their validated
 response contracts. `kernel.py` owns the Jupyter kernel process and
 execution lifecycle. `execution.py` collects output and outcomes. `interpreter.py`
-validates the configured interpreter and constructs its Jupyter launch specification.
-Tests cover real kernels, output ordering, cancellation, recovery, and stdio.
+validates the configured kernelspec name and constructs its Jupyter kernel manager.
+Tests cover real Python kernels, output ordering, cancellation, recovery, and stdio.
+R and Julia execution are not covered by the automated suite; display and interrupt
+behavior depend on the installed kernel implementation.
 CI runs Python 3.12–3.14. Windows is not covered by CI.
 
 FastMCP is pinned to **4.0.3**; all dependencies and development tools are resolved
@@ -254,7 +290,7 @@ then run the checks above. FastMCP deprecation warnings fail the test suite.
 Each tool publishes an output schema and MCP behavior annotations. `status` is read-only;
 `read_output` and `drain_output` consume output and are non-idempotent mutations.
 Execution, interruption, and reset can change the kernel and trigger arbitrary
-Python side effects. Inputs are validated against
+code side effects. Inputs are validated against
 the schema without coercion. Expected kernel errors are actionable MCP tool errors;
 unexpected server exceptions are logged and masked. Execution exceptions remain
 normal structured outcomes. For FastMCP Python clients, use `structured_content`
@@ -266,7 +302,9 @@ These conventions follow FastMCP's [tool documentation](https://gofastmcp.com/se
 The stdio transport and the existing polling contract require no task extension.
 
 This API replaces the previous `kernel_*` tools. Configure `--kernel` and optional
-`--cwd`; use the six tools above. `--project`, `--kernel`, discovery, explicit
+`--cwd`; use the six tools above. The server's `--python` option has been replaced
+by `--kernel`: register the old interpreter as a kernelspec and pass its name.
+`--project`, discovery, explicit
 start/stop tools, and the `timeout`/`msg_id` aliases have been removed.
 
 Consuming reads replace the previous replayable transcript API. `cursor` and

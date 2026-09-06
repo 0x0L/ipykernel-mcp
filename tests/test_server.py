@@ -244,7 +244,9 @@ async def test_discovery_publishes_documented_fields_and_executable_examples():
                 check_fields(value)
 
     async with Client(create_server(configured_kernel())) as client:
-        assert client.instructions == INSTRUCTIONS
+        assert client.instructions.startswith(INSTRUCTIONS)
+        assert "Configured kernel: 'python3'" in client.instructions
+        assert "Language: 'python'" in client.instructions
         tools = {tool.name: tool for tool in await client.list_tools()}
         for tool in tools.values():
             assert tool.description and tool.title
@@ -264,3 +266,19 @@ async def test_discovery_publishes_documented_fields_and_executable_examples():
         state = metadata(await client.call_tool("status", {}))
         assert state["executions"] == []
         assert state["unread_output_count"] == 0
+
+
+async def test_discovery_identifies_non_python_kernel(monkeypatch):
+    """A client must not have to infer the language from an arbitrary spec name."""
+    from types import SimpleNamespace
+    from unittest.mock import AsyncMock, Mock
+
+    kernel = Kernel(KernelConfig.from_paths("analysis", PROJECT))
+    kernel.manager = Mock(kernel_spec=SimpleNamespace(language="julia"))
+    monkeypatch.setattr(kernel, "open", AsyncMock())
+    monkeypatch.setattr(kernel, "close", AsyncMock())
+    async with Client(create_server(kernel)) as client:
+        assert "Configured kernel: 'analysis'" in client.instructions
+        assert "Language: 'julia'" in client.instructions
+        tools = {tool.name: tool for tool in await client.list_tools()}
+        assert "Python-only examples" in tools["execute"].description

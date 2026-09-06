@@ -44,10 +44,10 @@ uv run pre-commit install
 
 ## Architecture
 
-- `server.py`: six MCP tools, required interpreter configuration, lifespan ownership.
+- `server.py`: six MCP tools, required kernelspec configuration, lifespan ownership.
 - `schemas.py`: validated response models shared with MCP output schemas.
-- `interpreter.py`: immutable `KernelConfig`, interpreter preflight, and the ad-hoc
-  Jupyter launch adapter. Do not resolve executable symlinks: they select venvs.
+- `interpreter.py`: immutable `KernelConfig`, kernelspec preflight, and the
+  Jupyter kernel manager adapter. Kernel environments are selected by kernelspecs.
 - `kernel.py`: `Kernel` owns the process, readers, lifecycle lock, and retained
   executions. `open`/`close` belong to the server lifespan; `reset` replaces the process
   using the same configuration, including after a crash.
@@ -84,8 +84,10 @@ unread results; closing the server clears them.
 ## Tests
 
 Use isolated `Kernel` fixtures and `create_server(kernel)`. Message reducer tests
-exercise ordering, consumption, limits, and errors. Real-kernel tests use the test Python
-executable explicitly; fault injection covers cancellation and connection failures.
+exercise ordering, consumption, limits, and errors. Real-kernel tests use an isolated
+kernelspec pointing to the test Python; fault injection covers cancellation and
+connection failures. Publish the configured language in MCP discovery and label
+language-specific examples explicitly.
 The stdio smoke test checks the actual CLI and transport. CI uses locked tools on
 Python 3.12–3.14. Keep README examples and tool schemas synchronized.
 

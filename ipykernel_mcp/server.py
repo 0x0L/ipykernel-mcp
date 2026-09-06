@@ -53,6 +53,10 @@ interrupt to request a stop, and reset for a fresh kernel. One execution at a ti
 This server runs the configured Jupyter kernel. Its language, installed libraries,
 and initial directory are configured at startup; no start or environment-selection
 call is needed.
+Use this server for incremental calculations, loading data once and refining an
+analysis, or generating images for inspection. Choose the server for the intended
+language. Each server has separate variables and execution IDs; send follow-up
+code and output reads to the same server. Files can be shared through disk.
 Use the configured environment's libraries and files. Reuse data and functions
 across calls. Return summaries or samples of large datasets; save large artifacts
 to files. Reads free server output buffers, not variables in the kernel.
@@ -70,8 +74,9 @@ Invalid requests, busy kernels, and consumed/expired IDs are MCP tool errors.
 If the kernel is unavailable, reset recovers it but loses in-memory state.
 interrupt requests a stop; only a later result confirms the outcome.
 
-Output supports text and PNG/JPEG images. Use print, a final expression, or
-IPython.display.display; display(Image(filename=...)) returns a local image.
+Output supports text and PNG/JPEG images. Use the kernel's printing and display
+facilities. In Python, use `from IPython.display import Image, display` followed by
+`display(Image(filename="/absolute/path/image.png"))` to return a local image.
 HTML/widgets are not rendered. Display clears are ignored; updates append output.
 Late output after execution completion is ignored, so await work inside the cell.
 Unread buffers per execution are limited to 64 KiB text, 4 MiB payload, and 1,000
@@ -96,6 +101,15 @@ def create_server(kernel: Kernel) -> FastMCP:
     async def workspace_lifespan(server):
         try:
             await kernel.open()
+            assert kernel.manager is not None
+            spec = kernel.manager.kernel_spec
+            assert spec is not None
+            server.instructions = INSTRUCTIONS + (
+                f"\nConfigured kernel: {kernel.config.kernel_name!r}. "
+                f"Language: {spec.language!r}. "
+                f"Initial working directory: {str(kernel.config.cwd)!r}.\n"
+                "Write code in this language; Python examples apply only to Python kernels."
+            )
             yield {}
         finally:
             with CancelScope(shield=True):
@@ -132,8 +146,9 @@ def create_server(kernel: Kernel) -> FastMCP:
         and a positive wait_seconds; do not resubmit code. A final outcome removes
         the ID, so no follow-up read is needed. Code errors may leave partial state.
         If busy, read or interrupt the active execution before submitting more code.
-        input() is unsupported. wait_seconds defaults to 10 and never stops code.
+        Interactive stdin is disabled. wait_seconds defaults to 10 and never stops code.
 
+        Python-only examples (adapt syntax for other kernel languages):
         Example: {"code": "values = [10, 20, 30]; sum(values)"}
         Follow-up: {"code": "sum(values) / len(values)"}
         """
@@ -238,7 +253,7 @@ def create_server(kernel: Kernel) -> FastMCP:
         Returns kernel status with pending IDs/counts. Unread output and cancelled
         outcomes from the old kernel remain available until consumed or expired;
         reset does not drain them. Use drain_output to retrieve them. This cannot
-        change the configured interpreter or initial directory.
+        change the configured kernelspec or initial directory.
         """
         return WorkspaceStatus.model_validate(await _call_kernel(kernel.reset()))
 

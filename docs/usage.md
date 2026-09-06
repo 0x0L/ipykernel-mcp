@@ -4,6 +4,10 @@ These examples show code an agent can submit to the `execute` tool. Each Python
 block is a separate call; run the blocks within each example in order. Variables
 remain available between calls in the same server session. The MCP entry in the
 repository configuration is named `jupyter-python`.
+These examples require a Python kernel. For R, Julia, or another configured
+language, use its syntax and display facilities with the same six MCP tools.
+Keep follow-up calls on the same server: variables and execution IDs belong to
+that server only. Separate kernels can exchange data through saved files.
 
 ## Choose the next tool
 
