@@ -103,13 +103,28 @@ The answer should be `20.0`. The kernel starts automatically when the client
 connects. You can then ask for data exploration, calculations, image inspection,
 or charts in ordinary language. See [example conversations](docs/usage.md).
 
-Data stays in memory for the session. Restarting or resetting the kernel clears
+Data stays in memory for the session. Restarting the kernel clears
 that state; saved files remain on disk. Ask the agent to save important results.
 You can also ask it to stop a computation or start over with a fresh kernel.
 
 Plots and local PNG/JPEG images can be returned to clients that support image
 results. Image interpretation also requires a model with vision support.
 Interactive HTML widgets and audio are not rendered.
+
+### Connect another tool to the same kernel
+
+Ask the agent for the kernel's connection file path, exposed by `status()` as
+`connection_file`. Use it in a local tool that supports Jupyter connection files,
+for example with Jupyter Console installed:
+
+```bash
+jupyter console --existing /full/path/to/connection.json
+```
+
+Both clients share variables and imports. Restarting the kernel produces a new
+connection file; stopping the MCP server shuts the kernel down. The path is
+`null` when the kernel is not ready or busy. The MCP server tracks only its own
+executions, so coordinate work between clients.
 
 ## Troubleshooting
 

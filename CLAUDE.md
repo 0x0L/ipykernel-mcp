@@ -28,9 +28,9 @@ One configured Jupyter kernelspec, one persistent Jupyter kernel, one active exe
 opens that kernel in its lifespan and closes it on shutdown. Configuration cannot change
 through MCP tools. There is no environment discovery or public start/stop operation.
 
-The six tools are `execute`, `read_output`, `drain_output`, `interrupt`, `reset`,
+The six tools are `execute`, `read_output`, `drain_output`, `interrupt`, `restart`,
 and `status`.
-Keep names aligned between the README, MCP tools, and Python methods. `reset` clears
+Keep names aligned between the README, MCP tools, and Python methods. `restart` clears
 the Jupyter kernel. Returned output is consumed, including execute responses.
 
 ## Commands
@@ -53,7 +53,7 @@ uv run pre-commit install
 - `launcher_config.py`: private config executed by that Jupyter installation;
   relays lifecycle requests to its manager and exits on kernel death.
 - `kernel.py`: `Kernel` owns the process, readers, lifecycle lock, and retained
-  executions. `open`/`close` belong to the server lifespan; `reset` replaces the process
+  executions. `open`/`close` belong to the server lifespan; `restart` replaces the process
   using the same configuration, including after a crash.
 - `execution.py`: `Execution` handles Jupyter messages and its bounded unread
   `OutputBlock` list, consumption, terminal outcome, and MCP result rendering.
@@ -64,7 +64,7 @@ Normal completion requires shell execute_reply plus IOPub idle. Map protocol
 outcomes to `running`, `succeeded`, `failed`, or `cancelled`. Error metadata is
 `{type, message}`. Never expose protocol status names as new public outcomes.
 
-Reset/shutdown/death/reader failure finish active executions and wake waiters.
+Restart/shutdown/death/reader failure finish active executions and wake waiters.
 Cancelling a tool wait does not cancel code; status exposes the execution ID.
 No implicit retry or crash recovery. Stdin is disabled. Lifecycle operations
 serialize, but output waits never hold the lifecycle lock. Cleanup must finish
@@ -83,7 +83,7 @@ metadata and internal Jupyter messages. Consuming output resets byte/block budge
 and the truncation flag; it does not release Python variables in the kernel.
 Ignore clear_output; append update_display_data to its own execution. Do not track
 display IDs or mutate older output. Messages arriving after completion are ignored.
-Bound unread buffers and expire/evict unread completed records. Reset preserves
+Bound unread buffers and expire/evict unread completed records. Restart preserves
 unread results; closing the server clears them.
 
 ## Tests

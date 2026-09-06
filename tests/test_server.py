@@ -5,6 +5,7 @@ from pathlib import Path
 import pytest
 from fastmcp import Client
 from fastmcp.exceptions import ToolError
+from jupyter_client import AsyncKernelClient
 
 from ipykernel_mcp.interpreter import KernelConfig
 from ipykernel_mcp.kernel import Kernel
@@ -34,7 +35,7 @@ async def test_six_tools_with_required_arguments_and_no_aliases():
             "read_output",
             "drain_output",
             "interrupt",
-            "reset",
+            "restart",
             "status",
         }
         assert set(tools["execute"].input_schema["properties"]) == {
@@ -46,7 +47,7 @@ async def test_six_tools_with_required_arguments_and_no_aliases():
             "execution_id",
             "wait_seconds",
         }
-        for name in ("interrupt", "reset", "status", "drain_output"):
+        for name in ("interrupt", "restart", "status", "drain_output"):
             assert not tools[name].input_schema["properties"]
 
 
@@ -81,6 +82,49 @@ async def test_servers_are_isolated():
         result = await second.call_tool("execute", {"code": "answer"})
         assert metadata(result)["status"] == "failed"
         assert metadata(result)["error"]["type"] == "NameError"
+
+
+async def test_connection_file_attaches_to_shared_kernel_and_follows_lifecycle():
+    kernel = configured_kernel()
+    assert kernel.status()["connection_file"] is None
+    async with Client(create_server(kernel)) as client:
+        state = metadata(await client.call_tool("status", {}))
+        connection = Path(state["connection_file"])
+        assert connection.is_absolute() and connection.is_file()
+        await client.call_tool("execute", {"code": "shared_answer = 42"})
+        external = AsyncKernelClient(connection_file=str(connection))
+        external.load_connection_file()
+        external.start_channels()
+        try:
+            await external.wait_for_ready(timeout=10)
+            key = external.execute(
+                "external_answer = shared_answer + 1",
+                user_expressions={"answer": "external_answer"},
+            )
+            async with asyncio.timeout(10):
+                while True:
+                    reply = await external.get_shell_msg(timeout=10)
+                    if reply["parent_header"].get("msg_id") == key:
+                        break
+            assert reply["content"]["status"] == "ok"
+            assert (
+                reply["content"]["user_expressions"]["answer"]["data"]["text/plain"]
+                == "43"
+            )
+            result = await client.call_tool("execute", {"code": "external_answer"})
+            assert any(b.type == "text" and "43" in b.text for b in result.content)
+        finally:
+            external.stop_channels()
+        state = metadata(await client.call_tool("restart", {}))
+        replacement = Path(state["connection_file"])
+        assert replacement != connection
+        assert replacement.is_file()
+        assert not connection.exists()
+        assert metadata(await client.call_tool("status", {}))["connection_file"] == str(
+            replacement
+        )
+    assert kernel.status()["connection_file"] is None
+    assert not replacement.exists()
 
 
 async def test_stdio_explicit_interpreter_smoke():
@@ -144,12 +188,19 @@ async def test_tool_annotations_and_output_schemas():
             assert annotations.destructive_hint is not read_only
             assert annotations.idempotent_hint is read_only
             assert annotations.open_world_hint is (
-                name in ("execute", "interrupt", "reset")
+                name in ("execute", "interrupt", "restart")
             )
             assert tool.output_schema is not None
             assert tool.output_schema["type"] == "object"
             assert tool.output_schema["required"]
-        for name in ("status", "reset"):
+        for name in ("status", "restart"):
+            connection_field = tools[name].output_schema["properties"][
+                "connection_file"
+            ]
+            assert {item["type"] for item in connection_field["anyOf"]} == {
+                "string",
+                "null",
+            }
             launcher_field = tools[name].output_schema["properties"]["jupyter"]
             assert launcher_field["type"] == "string"
             assert "discovery and launch" in launcher_field["description"]

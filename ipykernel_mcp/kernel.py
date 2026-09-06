@@ -117,7 +117,7 @@ class Kernel:
             logger.exception("Kernel output reader failed")
             self._fail(
                 "OutputConnectionError",
-                f"Kernel {channel} reader failed: {exc}. Call reset() to recover.",
+                f"Kernel {channel} reader failed: {exc}. Call restart() to recover.",
             )
 
     async def _watch_process(self) -> None:
@@ -128,7 +128,7 @@ class Kernel:
                 if self.manager is not None and not await self.manager.is_alive():
                     self._fail(
                         "KernelDied",
-                        "Kernel process exited. State was lost; call reset() to recover.",
+                        "Kernel process exited. State was lost; call restart() to recover.",
                     )
                     return
         except asyncio.CancelledError:
@@ -156,7 +156,7 @@ class Kernel:
             self.client.stop_channels()
             self.client = None
         if self.manager is not None:
-            # Keep ownership if shutdown fails, allowing reset or close to retry.
+            # Keep ownership if shutdown fails, allowing restart or close to retry.
             await self.manager.shutdown_kernel(now=True)
             self.manager = None
 
@@ -201,14 +201,14 @@ class Kernel:
             self.state = "starting"
             await self._start_kernel()
 
-    async def reset(self) -> dict:
+    async def restart(self) -> dict:
         """Replace the Jupyter kernel, recovering from process or reader failure."""
         async with self.lifecycle_lock:
-            self.state = "resetting"
+            self.state = "restarting"
             self._finish_active(
                 "cancelled",
-                "WorkspaceReset",
-                "The workspace was reset before execution completed.",
+                "KernelRestarted",
+                "The kernel was restarted before execution completed.",
             )
             try:
                 await self._cleanup_resources()
@@ -222,7 +222,7 @@ class Kernel:
     async def interrupt(self) -> dict:
         async with self.lifecycle_lock:
             if self.manager is None or self.state not in ("ready", "busy"):
-                raise KernelError("Workspace is unavailable. Call reset() to recover.")
+                raise KernelError("Kernel is unavailable. Call restart() to recover.")
             execution_id = self.active_execution_id
             if execution_id is not None:
                 await self.manager.interrupt_kernel()
@@ -239,7 +239,7 @@ class Kernel:
             raise KernelError("code must not be empty.")
         async with self.lifecycle_lock:
             if self.client is None or self.state not in ("ready", "busy"):
-                raise KernelError("Workspace is unavailable. Call reset() to recover.")
+                raise KernelError("Kernel is unavailable. Call restart() to recover.")
             if self.active_execution_id:
                 raise KernelError(
                     f"Kernel is busy. Retrieve or interrupt execution_id={self.active_execution_id} before submitting more code."
@@ -354,6 +354,11 @@ class Kernel:
             "jupyter": str(self.config.jupyter),
             "kernel_name": self.config.kernel_name,
             "cwd": str(self.config.cwd),
+            "connection_file": (
+                self.client.connection_file
+                if self.client is not None and self.state in ("ready", "busy")
+                else None
+            ),
             "active_execution_id": self.active_execution_id,
             "executions": [
                 {

@@ -95,6 +95,7 @@ async def test_incremental_retrieval_consumes_output(kernel):
 async def test_busy_rejection_and_interrupt(kernel):
     initial = await kernel.execute("import time; time.sleep(30)", wait_seconds=0.2)
     key = metadata(initial)["execution_id"]
+    assert Path(kernel.status()["connection_file"]).is_file()
     with pytest.raises(KernelError, match=key):
         await kernel.execute('print("must not execute")')
     await kernel.interrupt()
@@ -103,17 +104,18 @@ async def test_busy_rejection_and_interrupt(kernel):
     assert metadata(await kernel.execute("42"))["status"] == "succeeded"
 
 
-async def test_reset_clears_variables(kernel):
+async def test_restart_clears_variables(kernel):
     await kernel.execute("answer = 42")
-    await kernel.reset()
+    await kernel.restart()
     assert metadata(await kernel.execute("answer"))["error"]["type"] == "NameError"
 
 
-async def test_kernel_death_resolves_wait_and_can_reset(kernel):
+async def test_kernel_death_resolves_wait_and_can_restart(kernel):
     result = await kernel.execute("import os; os._exit(0)", wait_seconds=5)
     assert metadata(result)["status"] == "failed"
     assert (kernel.status())["state"] == "unavailable"
-    await kernel.reset()
+    assert kernel.status()["connection_file"] is None
+    await kernel.restart()
     assert metadata(await kernel.execute("42"))["status"] == "succeeded"
 
 
@@ -189,7 +191,7 @@ async def test_updates_belong_to_the_execution_that_produced_them(kernel):
     assert not kernel.executions
     with pytest.raises(KernelError, match="consumed"):
         await kernel.read_output(first_id)
-    await kernel.reset()
+    await kernel.restart()
     third = await kernel.execute(
         "from IPython.display import display, update_display; display('another', display_id='shared'); update_display('different', display_id='shared')"
     )
@@ -226,7 +228,7 @@ async def test_persistent_state_and_configured_interpreter(kernel):
 
 
 @pytest.mark.parametrize(
-    "action, error_type", [("close", "ServerClosed"), ("reset", "WorkspaceReset")]
+    "action, error_type", [("close", "ServerClosed"), ("restart", "KernelRestarted")]
 )
 async def test_lifecycle_wakes_waiters(kernel, action, error_type):
     task = asyncio.create_task(
@@ -240,7 +242,7 @@ async def test_lifecycle_wakes_waiters(kernel, action, error_type):
     result = await asyncio.wait_for(task, 2)
     assert metadata(result)["status"] == "cancelled"
     assert metadata(result)["error"]["type"] == error_type
-    if action == "reset":
+    if action == "restart":
         with pytest.raises(KernelError, match="consumed"):
             await kernel.read_output(execution_id)
         assert metadata(await kernel.execute("42"))["status"] == "succeeded"
@@ -248,9 +250,9 @@ async def test_lifecycle_wakes_waiters(kernel, action, error_type):
         assert not kernel.executions
 
 
-async def test_reset_restores_initial_directory(kernel, tmp_path):
+async def test_restart_restores_initial_directory(kernel, tmp_path):
     await kernel.execute(f"import os; os.chdir({str(tmp_path)!r})")
-    await kernel.reset()
+    await kernel.restart()
     assert PROJECT in output(await kernel.execute("import os; print(os.getcwd())"))
     assert kernel.config.kernel_name == "python3"
 

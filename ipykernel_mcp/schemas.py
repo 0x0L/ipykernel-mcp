@@ -5,26 +5,26 @@ from typing import Literal
 from pydantic import BaseModel, Field
 
 ExecutionStatus = Literal["running", "succeeded", "failed", "cancelled"]
-WorkspaceState = Literal[
-    "closed", "starting", "ready", "busy", "resetting", "unavailable"
+KernelState = Literal[
+    "closed", "starting", "ready", "busy", "restarting", "unavailable"
 ]
 
 
 class ErrorInfo(BaseModel):
     type: str = Field(
-        description="Exception or lifecycle error type, e.g. ValueError or KernelDied."
+        description="Exception or lifecycle error type, e.g. ValueError or KernelDied. Kernel exceptions use Jupyter's ename; server lifecycle errors use server-defined types."
     )
     message: str = Field(
-        description="Diagnostic message explaining the failure or cancellation."
+        description="Diagnostic message explaining the failure or cancellation. Kernel exceptions use Jupyter's evalue; server lifecycle errors use server-defined messages."
     )
 
 
 class ExecutionSummary(BaseModel):
     execution_id: str = Field(
-        description="Opaque execution ID. Use for read_output while pending; removed after its final outcome is consumed."
+        description="Jupyter execute_request header msg_id, used as an opaque execution ID. Use for read_output while pending; removed after its final outcome is consumed."
     )
     status: ExecutionStatus = Field(
-        description="running: read again; succeeded: finished normally; failed: code or kernel error; cancelled: interrupted, reset, or closed. Final outcomes need no further read."
+        description="Server execution lifecycle outcome, distinct from Jupyter execute_reply status (ok/error/aborted). running: read again; succeeded: finished normally; failed: code or kernel error; cancelled: interrupted, restarted, or closed. Final outcomes need no further read."
     )
 
 
@@ -40,7 +40,7 @@ class ExecutionMetadata(ExecutionSummary):
         description="Output was dropped due to buffer limits since the previous read. Code may still be running; reading replenishes capacity but cannot recover dropped output."
     )
     error: ErrorInfo | None = Field(
-        description="Execution failure/cancellation details, or null. A code error can leave partial changes; it does not by itself require reset."
+        description="Execution failure/cancellation details, or null. A code error can leave partial changes; it does not by itself require restart."
     )
 
 
@@ -50,9 +50,9 @@ class DrainOutput(BaseModel):
     )
 
 
-class WorkspaceStatus(BaseModel):
-    state: WorkspaceState = Field(
-        description="ready: may execute; busy: read/interrupt active work; starting/resetting: transition; unavailable: inspect error and reset; closed: kernel shut down."
+class KernelStatus(BaseModel):
+    state: KernelState = Field(
+        description="Server lifecycle and availability state, not Jupyter's published execution_state. ready: may submit code through this server; busy: read/interrupt this server's active work; starting/restarting: transition; unavailable: inspect error and restart; closed: kernel shut down. External clients' executions are not tracked."
     )
     jupyter: str = Field(
         description="Configured Jupyter executable path used for discovery and launch, fixed for this server lifetime."
@@ -61,7 +61,10 @@ class WorkspaceStatus(BaseModel):
         description="Configured installed Jupyter kernel name, fixed for this server's lifetime."
     )
     cwd: str = Field(
-        description="Configured initial working directory, restored by reset. Code may have changed the kernel's current directory."
+        description="Configured initial working directory, restored by restart. Code may have changed the kernel's current directory."
+    )
+    connection_file: str | None = Field(
+        description="Absolute Jupyter connection JSON path for attaching another local client to this kernel. Available when ready/busy; otherwise null. Changes on restart and is removed on shutdown. External executions are not tracked by this server."
     )
     active_execution_id: str | None = Field(
         description="Currently running execution ID, or null. Null does not exclude unread completed outcomes."
@@ -74,7 +77,7 @@ class WorkspaceStatus(BaseModel):
         description="Sum of unread text/image blocks across pending executions. Excludes outcome metadata, so zero does not mean nothing to drain.",
     )
     error: ErrorInfo | None = Field(
-        description="Kernel lifecycle/connection failure, or null; distinct from individual code errors. Reset can recover an unavailable kernel but clears variables."
+        description="Kernel lifecycle/connection failure, or null; distinct from individual code errors. Restart can recover an unavailable kernel but clears variables."
     )
 
 

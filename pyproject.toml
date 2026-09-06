@@ -21,6 +21,7 @@ Issues = "https://github.com/0x0L/ipykernel-mcp/issues"
 [dependency-groups]
 dev = [
     "ipykernel>=7.3.0",
+    "jupyter-console>=6.6.3",
     "matplotlib>=3.11.1",
     "pre-commit>=4.6.2",
     "pytest>=9.1.1",

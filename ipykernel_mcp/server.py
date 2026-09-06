@@ -17,7 +17,7 @@ from pydantic import Field
 
 from .interpreter import InterpreterError, KernelConfig
 from .kernel import Kernel, KernelError
-from .schemas import DrainOutput, ExecutionMetadata, InterruptResult, WorkspaceStatus
+from .schemas import DrainOutput, ExecutionMetadata, InterruptResult, KernelStatus
 
 WaitSeconds = Annotated[
     float,
@@ -32,7 +32,7 @@ ExecutionId = Annotated[
     str,
     Field(
         min_length=1,
-        description="Opaque ID from execute or status.executions; valid until its final outcome is consumed or expires.",
+        description="Jupyter execute_request header msg_id, returned as execution_id by execute or status.executions; valid until its final outcome is consumed or expires.",
     ),
 ]
 KernelCode = Annotated[
@@ -48,7 +48,7 @@ Call execute to run code. Variables survive calls. If status is running, continu
 with read_output(execution_id); do not resubmit the code. Returned output is consumed,
 including execute output. Completed IDs are removed on return; reads cannot replay.
 Use status to inspect pending IDs/counts, drain_output to consume all pending results,
-interrupt to request a stop, and reset for a fresh kernel. One execution at a time.
+interrupt to request a stop, and restart for a fresh kernel. One execution at a time.
 
 This server discovers and launches its kernel through the configured Jupyter
 executable. That installation resolves the configured kernelspec, which determines
@@ -70,10 +70,17 @@ do not blindly rerun code, which may already have changed variables or files.
 
 Results contain content (text/images) and structured execution metadata: status is
 running, succeeded, failed, or cancelled. Code exceptions return failed outcomes
-with error details and may leave partial changes; they do not require a reset.
+with error details and may leave partial changes; they do not require a restart.
 Invalid requests, busy kernels, and consumed/expired IDs are MCP tool errors.
-If the kernel is unavailable, reset recovers it but loses in-memory state.
+If the kernel is unavailable, restart recovers it but loses in-memory state.
 interrupt requests a stop; only a later result confirms the outcome.
+
+Tool results use server execution lifecycle outcomes, not Jupyter execute_reply
+status values (ok/error/aborted). execution_id is the execute_request header msg_id.
+Kernel exception type/message come from Jupyter ename/evalue; lifecycle errors
+are defined by this server. The status tool reports server availability and pending
+work, not a Jupyter status message or kernel_info reply. Its ready/busy states
+track only executions submitted through this server, not external clients' work.
 
 Output supports text and PNG/JPEG images. Use the kernel's printing and display
 facilities. In Python, use `from IPython.display import Image, display` followed by
@@ -103,7 +110,7 @@ def create_server(kernel: Kernel) -> FastMCP:
     """The server owns the configured kernel's entire lifetime."""
 
     @lifespan
-    async def workspace_lifespan(server):
+    async def kernel_lifespan(server):
         try:
             await kernel.open()
             assert kernel.manager is not None
@@ -125,7 +132,7 @@ def create_server(kernel: Kernel) -> FastMCP:
         "ipykernel-mcp",
         version=version("ipykernel-mcp"),
         instructions=INSTRUCTIONS,
-        lifespan=workspace_lifespan,
+        lifespan=kernel_lifespan,
         strict_input_validation=True,
         mask_error_details=True,
     )
@@ -232,18 +239,18 @@ def create_server(kernel: Kernel) -> FastMCP:
     async def interrupt() -> InterruptResult:
         """Request that running code stop while preserving the existing Jupyter kernel.
 
-        Use to stop unwanted work without resetting variables. Returns the targeted
+        Use to stop unwanted work without clearing variables. Returns the targeted
         execution_id and interrupt_sent. A true flag only confirms Jupyter delivered
         an interrupt request; code can catch or defer it. Read that ID with
         read_output to learn the eventual outcome. If no execution is active,
         returns null and false.
         Partial changes made by code remain. If the kernel is unavailable, use
-        reset to recover; reset clears in-memory state.
+        restart to recover; restart clears in-memory state.
         """
         return InterruptResult.model_validate(await _call_kernel(kernel.interrupt()))
 
     @server.tool(
-        title="Reset Jupyter kernel",
+        title="Restart Jupyter kernel",
         annotations=ToolAnnotations(
             read_only_hint=False,
             destructive_hint=True,
@@ -251,7 +258,7 @@ def create_server(kernel: Kernel) -> FastMCP:
             open_world_hint=True,
         ),
     )
-    async def reset() -> WorkspaceStatus:
+    async def restart() -> KernelStatus:
         """Replace the Jupyter kernel with a fresh one using the same Jupyter executable, kernelspec, and initial cwd.
 
         Use for an intentional fresh start or to recover an unavailable kernel.
@@ -261,10 +268,10 @@ def create_server(kernel: Kernel) -> FastMCP:
 
         Returns kernel status with pending IDs/counts. Unread output and cancelled
         outcomes from the old kernel remain available until consumed or expired;
-        reset does not drain them. Use drain_output to retrieve them. This cannot
+        restart does not drain them. Use drain_output to retrieve them. This cannot
         change the configured Jupyter executable, kernelspec, or initial directory.
         """
-        return WorkspaceStatus.model_validate(await _call_kernel(kernel.reset()))
+        return KernelStatus.model_validate(await _call_kernel(kernel.restart()))
 
     @server.tool(
         title="Inspect Jupyter kernel",
@@ -275,13 +282,17 @@ def create_server(kernel: Kernel) -> FastMCP:
             open_world_hint=False,
         ),
     )
-    async def status() -> WorkspaceStatus:
+    async def status() -> KernelStatus:
         """Inspect kernel availability, configured paths, pending executions, and unread counts.
 
         Does not execute code or consume output. ready means code can be submitted;
-        busy means read or interrupt active_execution_id first. starting/resetting
-        are transitional; unavailable means inspect error and use reset to recover.
+        busy means read or interrupt active_execution_id first. starting/restarting
+        are transitional; unavailable means inspect error and use restart to recover.
         closed means the server's kernel is shut down.
+
+        state describes this server's lifecycle and availability, not Jupyter's
+        published execution_state. ready does not guarantee that an external
+        client is not executing code. This snapshot is not a kernel_info reply.
 
         executions includes active work and completed outcomes not yet consumed or
         expired; it is not execution history or a variable inventory. Counts measure
@@ -291,8 +302,13 @@ def create_server(kernel: Kernel) -> FastMCP:
         jupyter, kernel_name, and cwd are fixed startup settings; code may have
         changed its current directory since startup. This tool does not inspect
         current kernel variables.
+
+        connection_file lets another local Jupyter client attach to this same kernel,
+        e.g. jupyter console --existing <connection_file>. It is null unless ready/busy.
+        Restart returns a new path; shutdown removes the file and stops the kernel.
+        Executions and busy state track only work submitted through this server.
         """
-        return WorkspaceStatus.model_validate(kernel.status())
+        return KernelStatus.model_validate(kernel.status())
 
     return server
 

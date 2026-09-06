@@ -97,8 +97,8 @@ def test_non_executable_jupyter(tmp_path):
         KernelConfig.from_paths(str(launcher), "python3")
 
 
-async def test_selected_cli_owns_discovery_launch_and_reset(tmp_path):
-    """A kernel visible only to the selected CLI must work across reset."""
+async def test_selected_cli_owns_discovery_launch_and_restart(tmp_path):
+    """A kernel visible only to the selected CLI must work across restart."""
     import json
 
     from jupyter_client.kernelspec import KernelSpecManager
@@ -147,7 +147,7 @@ async def test_selected_cli_owns_discovery_launch_and_reset(tmp_path):
         assert any(
             "selected environment" in b.text for b in result.content if b.type == "text"
         )
-        await kernel.reset()
+        await kernel.restart()
         managers.append(kernel.manager)
         assert kernel.status()["jupyter"] == str(launcher)
         result = await kernel.execute("40 + 2")

@@ -87,15 +87,15 @@ async def test_cancelled_close_finishes_shutdown(fake_kernel):
     assert kernel.state == "closed"
 
 
-async def test_reset_failure_resolves_execution_and_reaps_kernel(fake_kernel):
+async def test_restart_failure_resolves_execution_and_reaps_kernel(fake_kernel):
     kernel, manager, client = fake_kernel
     kernel.manager, kernel.client = manager, client
     execution = Execution("active")
     kernel.executions["active"] = execution
     kernel.active_execution_id = "active"
-    client.wait_for_ready.side_effect = OSError("reset failed")
-    with pytest.raises(KernelError, match="reset failed"):
-        await kernel.reset()
+    client.wait_for_ready.side_effect = OSError("restart failed")
+    with pytest.raises(KernelError, match="restart failed"):
+        await kernel.restart()
     assert execution.done_event.is_set()
     assert execution.status == "cancelled"
     assert kernel.manager is None
