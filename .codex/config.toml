@@ -1,4 +1,4 @@
-[mcp_servers.ipykernel]
+[mcp_servers.jupyter-python]
 command = "uv"
 args = [
     "run",
@@ -6,7 +6,7 @@ args = [
     "--locked",
     "--dev",
     "ipykernel-mcp",
-    "--python", "/Users/xav/src/ipykernel-mcp/.venv/bin/python",
+    "--kernel", "python3",
     "--cwd", "/Users/xav/src/ipykernel-mcp",
 ]
 startup_timeout_sec = 60

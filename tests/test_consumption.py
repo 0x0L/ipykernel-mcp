@@ -1,8 +1,6 @@
 """Deterministic consuming-read behavior without kernel timing dependencies."""
 
 import asyncio
-import sys
-from pathlib import Path
 
 import pytest
 
@@ -13,7 +11,7 @@ from ipykernel_mcp.kernel import Kernel, KernelError
 
 @pytest.fixture
 def workspace(tmp_path):
-    return Kernel(KernelConfig(Path(sys.executable), tmp_path))
+    return Kernel(KernelConfig("python3", tmp_path))
 
 
 def add(workspace, key, *, done=False):

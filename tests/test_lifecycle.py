@@ -1,7 +1,6 @@
 """Deterministic fault injection for paths that real kernels rarely exercise."""
 
 import asyncio
-from pathlib import Path
 from unittest.mock import AsyncMock, Mock
 
 import pytest
@@ -25,8 +24,8 @@ async def fake_kernel(monkeypatch, tmp_path):
     monkeypatch.setattr(
         "ipykernel_mcp.kernel.create_kernel_manager", lambda config: manager
     )
-    monkeypatch.setattr("ipykernel_mcp.kernel.check_python", AsyncMock())
-    kernel = Kernel(KernelConfig(Path("/python"), tmp_path))
+    monkeypatch.setattr("ipykernel_mcp.kernel.check_kernel", AsyncMock())
+    kernel = Kernel(KernelConfig("python3", tmp_path))
     try:
         yield kernel, manager, client
     finally:
@@ -39,7 +38,7 @@ async def fake_kernel(monkeypatch, tmp_path):
 async def test_readiness_failure_cleans_process_and_channels(fake_kernel, failure):
     kernel, manager, client = fake_kernel
     client.wait_for_ready.side_effect = failure
-    with pytest.raises(KernelError, match="Failed to start Python"):
+    with pytest.raises(KernelError, match="Failed to start Jupyter kernel"):
         await kernel.open()
     manager.shutdown_kernel.assert_awaited_once()
     client.stop_channels.assert_called_once()

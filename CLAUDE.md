@@ -17,16 +17,14 @@ use it, what it returns or changes, and the next action for running/error outcom
 Describe parameters and result fields with `Field(description=...)`, including
 null/empty meanings and configured versus live values. Keep tool descriptions
 self-contained and examples executable. Verify metadata through a real MCP client,
-including nested schema fields, rather than testing source wording alone. Do not
-promise other kernel languages while the launcher requires Python/ipykernel.
+including nested schema fields, rather than testing source wording alone.
 
 ## Product contract
 
-One configured Python interpreter, one persistent Jupyter kernel, one active execution.
-`--python` is required; `--cwd` defaults to the server's working directory. The server
-opens Python in its lifespan and closes it on shutdown. Configuration cannot change
-through MCP tools. There is no environment discovery, kernel-spec selection, `.venv`
-convention, or public start/stop operation.
+One configured Jupyter kernelspec, one persistent Jupyter kernel, one active execution.
+`--kernel` is required; `--cwd` defaults to the server's working directory. The server
+opens that kernel in its lifespan and closes it on shutdown. Configuration cannot change
+through MCP tools. There is no environment discovery or public start/stop operation.
 
 The six tools are `execute`, `read_output`, `drain_output`, `interrupt`, `reset`,
 and `status`.

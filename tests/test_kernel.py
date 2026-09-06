@@ -27,7 +27,7 @@ def output(result):
 
 @pytest.fixture
 async def kernel():
-    kernel = Kernel(KernelConfig.from_paths(sys.executable, PROJECT))
+    kernel = Kernel(KernelConfig.from_paths("python3", PROJECT))
     try:
         await kernel.open()
         yield kernel
@@ -248,7 +248,7 @@ async def test_reset_restores_initial_directory(kernel, tmp_path):
     await kernel.execute(f"import os; os.chdir({str(tmp_path)!r})")
     await kernel.reset()
     assert PROJECT in output(await kernel.execute("import os; print(os.getcwd())"))
-    assert kernel.config.python == Path(sys.executable)
+    assert kernel.config.kernel_name == "python3"
 
 
 @pytest.mark.parametrize("budget", [-1, 61, float("inf"), float("nan")])
@@ -272,7 +272,7 @@ async def test_idle_interrupt_is_noop(kernel):
 
 
 async def test_simultaneous_opens_create_one_kernel():
-    kernel = Kernel(KernelConfig.from_paths(sys.executable, PROJECT))
+    kernel = Kernel(KernelConfig.from_paths("python3", PROJECT))
     try:
         results = await asyncio.gather(
             kernel.open(), kernel.open(), return_exceptions=True

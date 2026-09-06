@@ -1,4 +1,4 @@
-"""Validate a fixed Python interpreter and construct its kernel launch spec."""
+"""Validate a fixed Jupyter kernel specification and construct its manager."""
 
 from __future__ import annotations
 
@@ -6,86 +6,38 @@ import asyncio
 from dataclasses import dataclass
 from pathlib import Path
 
-from anyio import CancelScope
 from jupyter_client import AsyncKernelManager
-from jupyter_client.kernelspec import KernelSpec
+from jupyter_client.kernelspec import KernelSpecManager, NoSuchKernel
 
 
 class InterpreterError(ValueError):
-    """The configured Python executable cannot run an IPython kernel."""
+    """The configured Jupyter kernel specification cannot be used."""
 
 
 @dataclass(frozen=True)
 class KernelConfig:
-    python: Path
+    kernel_name: str
     cwd: Path
 
     @classmethod
-    def from_paths(cls, python: str, cwd: str | None = None) -> KernelConfig:
-        if not python.strip():
-            raise InterpreterError("--python must name a Python executable.")
-        # Resolving the executable's symlink would bypass its virtual environment.
-        executable = Path(python).expanduser().absolute()
+    def from_paths(cls, kernel_name: str, cwd: str | None = None) -> KernelConfig:
+        if not kernel_name.strip():
+            raise InterpreterError("--kernel must name an installed Jupyter kernel.")
         directory = Path(cwd).expanduser().resolve() if cwd else Path.cwd().resolve()
-        if not executable.is_file():
-            raise InterpreterError(f"Python executable does not exist: {executable}")
         if not directory.is_dir():
             raise InterpreterError(f"Working directory does not exist: {directory}")
-        return cls(executable, directory)
+        return cls(kernel_name, directory)
 
 
 def create_kernel_manager(config: KernelConfig) -> AsyncKernelManager:
-    manager = AsyncKernelManager()
-    # jupyter-client has no public setter for an ad-hoc KernelSpec. Keep this
-    # dependency isolated here and covered by real-interpreter tests.
-    manager._kernel_spec = KernelSpec(
-        argv=[
-            str(config.python),
-            "-m",
-            "ipykernel_launcher",
-            "-f",
-            "{connection_file}",
-        ],
-        display_name="Python",
-        language="python",
-    )
-    return manager
+    return AsyncKernelManager(kernel_name=config.kernel_name)
 
 
-async def check_python(python: Path) -> None:
+async def check_kernel(kernel_name: str) -> None:
     try:
-        process = await asyncio.create_subprocess_exec(
-            str(python),
-            "-c",
-            "import importlib.util, sys\n"
-            "if importlib.util.find_spec('ipykernel') is None:\n"
-            "    sys.exit(3)\n"
-            "import ipykernel\n",
-            stdout=asyncio.subprocess.DEVNULL,
-            stderr=asyncio.subprocess.PIPE,
-        )
-    except OSError as exc:
-        raise InterpreterError(f"Cannot run interpreter {python}: {exc}") from exc
-    try:
-        _, stderr = await asyncio.wait_for(process.communicate(), 10)
-    except BaseException as exc:
-        with CancelScope(shield=True):
-            if process.returncode is None:
-                try:
-                    process.kill()
-                except ProcessLookupError:
-                    pass
-            await process.wait()
-        if isinstance(exc, TimeoutError):
-            raise InterpreterError(
-                f"Interpreter check timed out for {python} after 10 seconds."
-            ) from exc
-        raise
-    if process.returncode == 3:
+        await asyncio.to_thread(KernelSpecManager().get_kernel_spec, kernel_name)
+    except NoSuchKernel as exc:
         raise InterpreterError(
-            f"ipykernel is missing from {python}. Install ipykernel in that environment."
-        )
-    if process.returncode:
-        raise InterpreterError(
-            f"Interpreter check failed for {python}: {stderr.decode(errors='replace')[-2000:]}"
-        )
+            f"Jupyter kernel is not installed: {kernel_name}. "
+            "Install its kernelspec, then use `jupyter kernelspec list` to find its name."
+        ) from exc

@@ -3,7 +3,7 @@
 These examples show code an agent can submit to the `execute` tool. Each Python
 block is a separate call; run the blocks within each example in order. Variables
 remain available between calls in the same server session. The MCP entry in the
-repository configuration is named `ipykernel`.
+repository configuration is named `jupyter-python`.
 
 ## Choose the next tool
 

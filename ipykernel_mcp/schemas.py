@@ -54,8 +54,8 @@ class WorkspaceStatus(BaseModel):
     state: WorkspaceState = Field(
         description="ready: may execute; busy: read/interrupt active work; starting/resetting: transition; unavailable: inspect error and reset; closed: kernel shut down."
     )
-    python: str = Field(
-        description="Configured Python executable path, fixed for this server's lifetime."
+    kernel_name: str = Field(
+        description="Configured installed Jupyter kernel name, fixed for this server's lifetime."
     )
     cwd: str = Field(
         description="Configured initial working directory, restored by reset. Code may have changed the kernel's current directory."

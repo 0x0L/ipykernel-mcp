@@ -19,7 +19,7 @@ def metadata(result):
 
 
 def configured_kernel():
-    return Kernel(KernelConfig.from_paths(sys.executable, PROJECT))
+    return Kernel(KernelConfig.from_paths("python3", PROJECT))
 
 
 async def test_six_tools_with_required_arguments_and_no_aliases():
@@ -52,10 +52,9 @@ async def test_server_owns_startup_and_shutdown():
     async with Client(create_server(kernel)) as client:
         state = metadata(await client.call_tool("status", {}))
         assert state["state"] == "ready"
-        assert state["python"] == sys.executable
+        assert state["kernel_name"] == "python3"
         assert state["cwd"] == PROJECT
         assert "running" not in state
-        assert "kernel_name" not in state
         result = await client.call_tool("execute", {"code": "42"})
         assert metadata(result)["status"] == "succeeded"
         assert metadata(result)["execution_id"]
@@ -88,8 +87,8 @@ async def test_stdio_explicit_interpreter_smoke():
         args=[
             "-m",
             "ipykernel_mcp.server",
-            "--python",
-            sys.executable,
+            "--kernel",
+            "python3",
             "--cwd",
             PROJECT,
         ],
@@ -104,9 +103,7 @@ async def test_stdio_explicit_interpreter_smoke():
         )
 
 
-@pytest.mark.parametrize(
-    "args", [[], ["--project", PROJECT], ["--python", "/missing/python"]]
-)
+@pytest.mark.parametrize("args", [[], ["--project", PROJECT]])
 async def test_cli_rejects_missing_or_invalid_interpreter(args):
     process = await asyncio.create_subprocess_exec(
         sys.executable,

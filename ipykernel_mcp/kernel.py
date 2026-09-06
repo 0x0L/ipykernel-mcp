@@ -13,7 +13,7 @@ from fastmcp.tools import ToolResult
 from jupyter_client import AsyncKernelClient, AsyncKernelManager
 
 from .execution import Execution
-from .interpreter import KernelConfig, check_python, create_kernel_manager
+from .interpreter import KernelConfig, check_kernel, create_kernel_manager
 from .schemas import DrainOutput, ExecutionStatus
 
 logger = logging.getLogger(__name__)
@@ -171,7 +171,7 @@ class Kernel:
     async def _start_kernel(self) -> None:
         self.error = None
         try:
-            await check_python(self.config.python)
+            await check_kernel(self.config.kernel_name)
             self.manager = create_kernel_manager(self.config)
             await self.manager.start_kernel(cwd=str(self.config.cwd))
             self.client = self.manager.client()
@@ -186,7 +186,9 @@ class Kernel:
             self.error = {"type": type(exc).__name__, "message": str(exc)}
             if isinstance(exc, asyncio.CancelledError):
                 raise
-            raise KernelError(f"Failed to start Python: {exc}") from exc
+            raise KernelError(
+                f"Failed to start Jupyter kernel {self.config.kernel_name!r}: {exc}"
+            ) from exc
         self.state = "ready"
         self._start_background_tasks()
 
@@ -194,7 +196,7 @@ class Kernel:
         """Start the configured interpreter when the owning server starts."""
         async with self.lifecycle_lock:
             if self.manager is not None:
-                raise KernelError("Python is already running.")
+                raise KernelError("The configured Jupyter kernel is already running.")
             self.state = "starting"
             await self._start_kernel()
 
@@ -318,7 +320,7 @@ class Kernel:
         self._prune_results()
         return {
             "state": self.state,
-            "python": str(self.config.python),
+            "kernel_name": self.config.kernel_name,
             "cwd": str(self.config.cwd),
             "active_execution_id": self.active_execution_id,
             "executions": [

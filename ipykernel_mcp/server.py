@@ -35,11 +35,11 @@ ExecutionId = Annotated[
         description="Opaque ID from execute or status.executions; valid until its final outcome is consumed or expires.",
     ),
 ]
-PythonCode = Annotated[
+KernelCode = Annotated[
     str,
     Field(
         min_length=1,
-        description="Non-empty Python source for the persistent Jupyter kernel, without Markdown fences. Variables and imports survive calls.",
+        description="Non-empty source for the configured persistent Jupyter kernel, without Markdown fences. Variables and imports survive calls.",
     ),
 ]
 
@@ -50,8 +50,9 @@ including execute output. Completed IDs are removed on return; reads cannot repl
 Use status to inspect pending IDs/counts, drain_output to consume all pending results,
 interrupt to request a stop, and reset for a fresh kernel. One execution at a time.
 
-This server runs Python through ipykernel. The interpreter and initial directory
-are configured at startup; no start or environment-selection call is needed.
+This server runs the configured Jupyter kernel. Its language, installed libraries,
+and initial directory are configured at startup; no start or environment-selection
+call is needed.
 Use the configured environment's libraries and files. Reuse data and functions
 across calls. Return summaries or samples of large datasets; save large artifacts
 to files. Reads free server output buffers, not variables in the kernel.
@@ -110,7 +111,7 @@ def create_server(kernel: Kernel) -> FastMCP:
     )
 
     @server.tool(
-        title="Execute Python",
+        title="Execute in Jupyter kernel",
         output_schema=ExecutionMetadata.model_json_schema(),
         annotations=ToolAnnotations(
             read_only_hint=False,
@@ -119,13 +120,12 @@ def create_server(kernel: Kernel) -> FastMCP:
             open_world_hint=True,
         ),
     )
-    async def execute(code: PythonCode, wait_seconds: WaitSeconds = 10) -> ToolResult:
+    async def execute(code: KernelCode, wait_seconds: WaitSeconds = 10) -> ToolResult:
         """Run code in the persistent Jupyter kernel for calculations, analysis, or images.
 
-        Accepts Python source using installed libraries. Variables, imports, and
-        functions survive calls. Show values with a final expression or print;
-        use `from IPython.display import Image, display` and
-        `display(Image(filename="/absolute/path/image.png"))` to return an image.
+        Use source and libraries supported by the configured kernel. Variables,
+        imports, and functions survive calls. Jupyter display data containing PNG
+        or JPEG images is returned as image content.
 
         Returns text/images plus execution_id, status, truncated, and error.
         Returned output is consumed. If running, call read_output with that ID
@@ -198,7 +198,7 @@ def create_server(kernel: Kernel) -> FastMCP:
         return await _call_kernel(kernel.drain_output())
 
     @server.tool(
-        title="Interrupt Python",
+        title="Interrupt Jupyter kernel",
         annotations=ToolAnnotations(
             read_only_hint=False,
             destructive_hint=True,
@@ -228,7 +228,7 @@ def create_server(kernel: Kernel) -> FastMCP:
         ),
     )
     async def reset() -> WorkspaceStatus:
-        """Replace the Jupyter kernel with a fresh one using the same interpreter and initial cwd.
+        """Replace the Jupyter kernel with a fresh one using the same kernelspec and initial cwd.
 
         Use for an intentional fresh start or to recover an unavailable kernel.
         Cancels active execution and clears all variables, imports, and functions.
@@ -264,7 +264,7 @@ def create_server(kernel: Kernel) -> FastMCP:
         buffered text/image blocks before stream merging, excluding metadata and
         internal Jupyter messages. Zero unread_output_count does not imply completion
         or no pending outcomes. Use read_output for one ID or drain_output for all.
-        python and cwd are fixed startup settings; code may have changed its current
+        kernel_name and cwd are fixed startup settings; code may have changed its current
         directory since startup. This tool does not inspect current kernel variables.
         """
         return WorkspaceStatus.model_validate(kernel.status())
@@ -274,15 +274,13 @@ def create_server(kernel: Kernel) -> FastMCP:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="A persistent Jupyter kernel for MCP.")
-    parser.add_argument(
-        "--python", required=True, help="Python executable with ipykernel installed"
-    )
+    parser.add_argument("--kernel", required=True, help="Installed Jupyter kernel name")
     parser.add_argument(
         "--cwd", help="Initial working directory (default: server working directory)"
     )
     args = parser.parse_args()
     try:
-        config = KernelConfig.from_paths(args.python, args.cwd)
+        config = KernelConfig.from_paths(args.kernel, args.cwd)
     except InterpreterError as exc:
         parser.error(str(exc))
     try:

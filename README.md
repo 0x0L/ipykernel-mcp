@@ -2,7 +2,7 @@
 
 A persistent Jupyter kernel for an MCP client. Give your agent a place to compute,
 keep intermediate results, and return images as it works through a task. Configure
-the Python executable once; variables, imports, and functions survive between calls.
+an installed Jupyter kernel once; variables, imports, and functions survive between calls.
 
 ## Why a persistent kernel?
 
@@ -28,7 +28,7 @@ Or:
 > Read this PNG through the kernel and show me the image.
 
 The kernel executes code and returns results; the connected model interprets them.
-Available libraries and file access come from the configured Python environment.
+Available libraries and file access come from the configured kernel environment.
 State lasts for the server session: resetting the kernel or restarting the server
 clears variables. Save results to files when they need to outlive the session.
 
@@ -42,18 +42,19 @@ and input/output field descriptions so clients receive it during discovery.
 
 ## Configuration
 
-Point `--python` at an interpreter with `ipykernel` installed. Use `--cwd` for the
-working directory; it defaults to the server's working directory.
+Point `--kernel` at an installed Jupyter kernelspec. Use `--cwd` for the working
+directory; it defaults to the server's working directory. Configure one MCP server
+entry per language/kernel you want available.
 
 ```json
 {
   "mcpServers": {
-    "ipykernel": {
+    "jupyter-python": {
       "command": "uvx",
       "args": [
         "--from", "git+https://github.com/0x0L/ipykernel-mcp",
         "ipykernel-mcp",
-        "--python", "/path/to/project/.venv/bin/python",
+        "--kernel", "python3",
         "--cwd", "/path/to/project"
       ]
     }
@@ -61,18 +62,18 @@ working directory; it defaults to the server's working directory.
 }
 ```
 
-The server starts an IPython kernel when it connects and closes it when it disconnects.
-Jupyter supports multiple languages; this server currently uses Python through
-`ipykernel` and requires a Python interpreter configured with `--python`.
-An invalid interpreter or missing `ipykernel` fails at startup with a diagnostic.
-The interpreter and initial working directory are fixed for that server's lifetime.
-There is no environment discovery, `.venv` convention, or runtime environment
-selection. The server's own Python environment is independent of the configured one.
+The server starts the configured Jupyter kernel when it connects and closes it when it
+disconnects. Find installed names with `jupyter kernelspec list`; a missing kernel fails
+at startup with a diagnostic. The kernel and initial working directory are fixed for that
+server's lifetime. The server's own Python environment is independent of the selected
+kernel's environment.
 
-To install `ipykernel` in an existing environment:
+For example, add a second entry with `"--kernel", "ir"` after installing IRkernel, or
+`"--kernel", "julia-1.11"` after installing IJulia. Each entry gets an isolated kernel
+process and state.
 
 ```bash
-uv pip install --python /path/to/project/.venv/bin/python ipykernel
+jupyter kernelspec list
 ```
 
 Use absolute paths in MCP configuration. Relative paths are interpreted from the
@@ -82,11 +83,11 @@ server's working directory. Code runs with the local user's permissions.
 
 | Tool | Meaning |
 |---|---|
-| `execute(code, wait_seconds=10)` | Run Python in the persistent Jupyter kernel |
+| `execute(code, wait_seconds=10)` | Run source in the persistent Jupyter kernel |
 | `read_output(execution_id, wait_seconds=0)` | Return and consume one execution's unread output and outcome |
 | `drain_output()` | Return and consume all pending output and completed outcomes |
 | `interrupt()` | Ask the currently running code to stop, preserving kernel state |
-| `reset()` | Start a fresh kernel using the same interpreter and initial working directory |
+| `reset()` | Start a fresh kernel using the same Jupyter kernelspec and initial working directory |
 | `status()` | Inspect the kernel, pending execution IDs, and unread output counts |
 
 ```text
@@ -210,7 +211,7 @@ Both run the local source using:
 
 ```bash
 uv run --project /Users/xav/src/ipykernel-mcp --locked --dev ipykernel-mcp \
-  --python /Users/xav/src/ipykernel-mcp/.venv/bin/python \
+  --kernel python3 \
   --cwd /Users/xav/src/ipykernel-mcp
 ```
 
@@ -224,14 +225,14 @@ approve the project server; Codex loads project configuration for trusted projec
 project directory and runs its editable installation using `uv.lock`.
 `uv run file:///path/to/project` does not launch a project package.
 To use the checkout from another project's MCP configuration, keep `--project`
-pointing here and change `--python` and `--cwd` to that project's environment and
-working directory.
+pointing here and change `--kernel` and `--cwd` for that project's installed kernel
+and working directory.
 
 ### Checks
 
 ```bash
 uv sync --locked --dev
-uv run ipykernel-mcp --python /path/to/project/.venv/bin/python --cwd /path/to/project
+uv run ipykernel-mcp --kernel python3 --cwd /path/to/project
 uv run ruff format --check
 uv run ruff check
 uv run ty check
@@ -239,7 +240,7 @@ uv run pytest tests/ -v
 ```
 
 `server.py` defines the MCP tools and CLI. `schemas.py` defines their validated
-response contracts. `kernel.py` owns the Python process and
+response contracts. `kernel.py` owns the Jupyter kernel process and
 execution lifecycle. `execution.py` collects output and outcomes. `interpreter.py`
 validates the configured interpreter and constructs its Jupyter launch specification.
 Tests cover real kernels, output ordering, cancellation, recovery, and stdio.
@@ -264,7 +265,7 @@ These conventions follow FastMCP's [tool documentation](https://gofastmcp.com/se
 [versioning guidance](https://gofastmcp.com/getting-started/installation).
 The stdio transport and the existing polling contract require no task extension.
 
-This API replaces the previous `kernel_*` tools. Configure `--python` and optional
+This API replaces the previous `kernel_*` tools. Configure `--kernel` and optional
 `--cwd`; use the six tools above. `--project`, `--kernel`, discovery, explicit
 start/stop tools, and the `timeout`/`msg_id` aliases have been removed.
 

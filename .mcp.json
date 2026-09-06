@@ -1,6 +1,6 @@
 {
   "mcpServers": {
-    "ipykernel": {
+    "jupyter-python": {
       "command": "uv",
       "args": [
         "run",
@@ -8,7 +8,7 @@
         "--locked",
         "--dev",
         "ipykernel-mcp",
-        "--python", "/Users/xav/src/ipykernel-mcp/.venv/bin/python",
+        "--kernel", "python3",
         "--cwd", "/Users/xav/src/ipykernel-mcp"
       ]
     }
