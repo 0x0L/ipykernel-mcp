@@ -199,7 +199,7 @@ class Kernel:
             await self._start_kernel()
 
     async def reset(self) -> dict:
-        """Replace the workspace, including recovery after a process/reader failure."""
+        """Replace the Jupyter kernel, recovering from process or reader failure."""
         async with self.lifecycle_lock:
             self.state = "resetting"
             self._finish_active(

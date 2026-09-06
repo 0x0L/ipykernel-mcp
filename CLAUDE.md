@@ -10,6 +10,16 @@ that must be installed in the configured kernel environment. Image interpretatio
 depends on the client's support for image tool results and the model's vision
 capabilities. Distinguish session state from retained output and saved files.
 
+The model receives server instructions, tool docstrings, and JSON schemas; do not
+rely on it reading the README. Put the essential execute/read/consume workflow at
+the beginning of server instructions. Each tool description should state when to
+use it, what it returns or changes, and the next action for running/error outcomes.
+Describe parameters and result fields with `Field(description=...)`, including
+null/empty meanings and configured versus live values. Keep tool descriptions
+self-contained and examples executable. Verify metadata through a real MCP client,
+including nested schema fields, rather than testing source wording alone. Do not
+promise other kernel languages while the launcher requires Python/ipykernel.
+
 ## Product contract
 
 One configured Python interpreter, one persistent Jupyter kernel, one active execution.

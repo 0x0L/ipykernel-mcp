@@ -25,39 +25,60 @@ WaitSeconds = Annotated[
         ge=0,
         le=60,
         allow_inf_nan=False,
-        description="Seconds to wait for completion; expiration does not stop Python.",
+        description="Seconds to wait for completion (0–60); 0 returns immediately. Expiration leaves code running.",
     ),
 ]
 ExecutionId = Annotated[
     str,
     Field(
         min_length=1,
-        description="Execution ID returned by execute or listed by status.",
+        description="Opaque ID from execute or status.executions; valid until its final outcome is consumed or expires.",
     ),
 ]
 PythonCode = Annotated[
     str,
     Field(
-        min_length=1, description="Python code to run in the persistent Jupyter kernel."
+        min_length=1,
+        description="Non-empty Python source for the persistent Jupyter kernel, without Markdown fences. Variables and imports survive calls.",
     ),
 ]
 
-INSTRUCTIONS = """A persistent Jupyter kernel, already configured and started.
-Use execute for code, read_output for one execution, drain_output for all pending
-output, and status for unread counts and pending IDs. Returned output is consumed,
-including output returned by execute. Completed records are removed on delivery.
-Reads cannot be replayed. One execution runs at a time. wait_seconds limits waiting,
-not execution duration. If running, call read_output with execution_id; no cursor.
-Each execution response has execution_id, status, truncated, and error. Status is
-running, succeeded, failed, or cancelled. drain_output groups output by execution
-and includes completed outcomes even when there is no output. New output arriving
-after a drain remains unread. Counts measure text/image blocks, not Jupyter messages.
-Unread completed results expire after 10 minutes, at most 16 executions are tracked.
-Display clears are ignored; display updates append output to their own execution.
-Exceptions are execution outcomes; invalid requests are MCP tool errors. input() fails.
-Cancelling a wait leaves code running. interrupt asks code to stop; reset starts a
-fresh workspace and recovers failures. Variables survive reads, not resets or shutdown.
-Code is never silently rerun."""
+INSTRUCTIONS = """A persistent Jupyter kernel for computation, data analysis, and images.
+Call execute to run code. Variables survive calls. If status is running, continue
+with read_output(execution_id); do not resubmit the code. Returned output is consumed,
+including execute output. Completed IDs are removed on return; reads cannot replay.
+Use status to inspect pending IDs/counts, drain_output to consume all pending results,
+interrupt to request a stop, and reset for a fresh kernel. One execution at a time.
+
+This server runs Python through ipykernel. The interpreter and initial directory
+are configured at startup; no start or environment-selection call is needed.
+Use the configured environment's libraries and files. Reuse data and functions
+across calls. Return summaries or samples of large datasets; save large artifacts
+to files. Reads free server output buffers, not variables in the kernel.
+
+wait_seconds limits waiting, never code duration. execute defaults to 10 seconds;
+read_output defaults to 0; both accept 0–60. Use a positive wait for unfinished work.
+Use one output consumer at a time: read_output for one ID or drain_output for all.
+A cancelled tool wait leaves code running. After a lost response, inspect status;
+do not blindly rerun code, which may already have changed variables or files.
+
+Results contain content (text/images) and structured execution metadata: status is
+running, succeeded, failed, or cancelled. Code exceptions return failed outcomes
+with error details and may leave partial changes; they do not require a reset.
+Invalid requests, busy kernels, and consumed/expired IDs are MCP tool errors.
+If the kernel is unavailable, reset recovers it but loses in-memory state.
+interrupt requests a stop; only a later result confirms the outcome.
+
+Output supports text and PNG/JPEG images. Use print, a final expression, or
+IPython.display.display; display(Image(filename=...)) returns a local image.
+HTML/widgets are not rendered. Display clears are ignored; updates append output.
+Late output after execution completion is ignored, so await work inside the cell.
+Unread buffers per execution are limited to 64 KiB text, 4 MiB payload, and 1,000
+blocks. truncated reports dropped output since the previous read; reads replenish
+capacity. Unread completed results expire after 10 minutes; at most 16 executions
+are tracked, evicting oldest completed results first. Consumed results are removed
+immediately. Save needed results in your response or files; there is no replay.
+"""
 
 
 async def _call_kernel[T](operation: Awaitable[T]) -> T:
@@ -99,10 +120,22 @@ def create_server(kernel: Kernel) -> FastMCP:
         ),
     )
     async def execute(code: PythonCode, wait_seconds: WaitSeconds = 10) -> ToolResult:
-        """Run Python with persistent variables; wait up to 10 seconds by default.
+        """Run code in the persistent Jupyter kernel for calculations, analysis, or images.
 
-        wait_seconds (0–60) limits waiting, not code duration. If status is running,
-        pass execution_id to read_output. Returned output is consumed. One execution at a time.
+        Accepts Python source using installed libraries. Variables, imports, and
+        functions survive calls. Show values with a final expression or print;
+        use `from IPython.display import Image, display` and
+        `display(Image(filename="/absolute/path/image.png"))` to return an image.
+
+        Returns text/images plus execution_id, status, truncated, and error.
+        Returned output is consumed. If running, call read_output with that ID
+        and a positive wait_seconds; do not resubmit code. A final outcome removes
+        the ID, so no follow-up read is needed. Code errors may leave partial state.
+        If busy, read or interrupt the active execution before submitting more code.
+        input() is unsupported. wait_seconds defaults to 10 and never stops code.
+
+        Example: {"code": "values = [10, 20, 30]; sum(values)"}
+        Follow-up: {"code": "sum(values) / len(values)"}
         """
         return await _call_kernel(kernel.execute(code, wait_seconds))
 
@@ -120,11 +153,19 @@ def create_server(kernel: Kernel) -> FastMCP:
         execution_id: ExecutionId,
         wait_seconds: WaitSeconds = 0,
     ) -> ToolResult:
-        """Return and consume unread output for one execution; immediate by default.
+        """Retrieve and consume one pending execution's unread output and current outcome.
 
-        Completed records are removed when returned. Reads cannot be replayed.
-        If another reader consumes the final outcome while this call waits, this
-        call returns a tool error. Use one consumer per execution.
+        Use the ID returned by execute or listed in status.executions. Defaults
+        to an immediate read; use wait_seconds=10 to wait for unfinished work.
+        Returns text/images plus execution_id, status, truncated, and error.
+        If running, keep reading the same ID. A final outcome removes the record,
+        including silent completions; do not read that ID again. No code is run.
+
+        Output is returned once, without a cursor or replay. Do not race this call
+        with another read or drain_output: a waiter whose final outcome was consumed
+        elsewhere gets a tool error. Unknown/consumed/expired IDs also error; inspect
+        status for remaining work. Reads preserve kernel variables. To retrieve all
+        pending results at once, use drain_output.
         """
         return await _call_kernel(kernel.read_output(execution_id, wait_seconds))
 
@@ -139,12 +180,20 @@ def create_server(kernel: Kernel) -> FastMCP:
         ),
     )
     async def drain_output() -> ToolResult:
-        """Immediately return and consume all pending output, grouped by execution.
+        """Retrieve and consume all pending output and completed outcomes without waiting.
 
-        Includes silent completed outcomes and truncation notices. Each content
-        group starts with execution metadata; structured executions lists outcomes.
-        Removes completed records, keeps running ones, and leaves future output
-        for the next read. An empty drain returns executions=[]. No code is run.
+        Use to collect every pending result; use read_output to target one ID.
+        Each content group starts with an [execution] header identifying its ID
+        and outcome, followed by text/images. Structured executions lists the same
+        metadata in group order. Silent completed outcomes and truncation notices
+        are included even when status.unread_output_count is zero.
+
+        Returned output is released and completed records are removed. Running
+        records remain; output arriving afterward stays unread. Running records
+        with no output or truncation notice are omitted. An empty executions list
+        means nothing was pending to return, not necessarily that the kernel is idle.
+        Check status for active work. Do not overlap with other output consumers.
+        Does not run code, stop execution, or clear kernel variables. No replay.
         """
         return await _call_kernel(kernel.drain_output())
 
@@ -158,9 +207,14 @@ def create_server(kernel: Kernel) -> FastMCP:
         ),
     )
     async def interrupt() -> InterruptResult:
-        """Ask running code to stop, preserving variables. Code may defer or catch it.
+        """Request that running code stop while preserving the existing Jupyter kernel.
 
-        Read the active execution to see its eventual outcome.
+        Use to stop unwanted work without resetting variables. Returns the targeted
+        execution_id and interrupt_sent. A true flag only confirms a signal was
+        sent; code can catch or defer it. Read that ID with read_output to learn
+        the eventual outcome. If no execution is active, returns null and false.
+        Partial changes made by code remain. If the kernel is unavailable, use
+        reset to recover; reset clears in-memory state.
         """
         return InterruptResult.model_validate(await _call_kernel(kernel.interrupt()))
 
@@ -174,10 +228,17 @@ def create_server(kernel: Kernel) -> FastMCP:
         ),
     )
     async def reset() -> WorkspaceStatus:
-        """Start a fresh Jupyter kernel with the same interpreter and initial cwd.
+        """Replace the Jupyter kernel with a fresh one using the same interpreter and initial cwd.
 
-        Clears variables and cancels active execution. Also recovers from crashes
-        and output connection failures. Unread results remain available until consumed or expired.
+        Use for an intentional fresh start or to recover an unavailable kernel.
+        Cancels active execution and clears all variables, imports, and functions.
+        Files already written remain. For ordinary code errors, fix the code and
+        execute again; for a stop that preserves state, use interrupt instead.
+
+        Returns kernel status with pending IDs/counts. Unread output and cancelled
+        outcomes from the old kernel remain available until consumed or expired;
+        reset does not drain them. Use drain_output to retrieve them. This cannot
+        change the configured interpreter or initial directory.
         """
         return WorkspaceStatus.model_validate(await _call_kernel(kernel.reset()))
 
@@ -191,7 +252,21 @@ def create_server(kernel: Kernel) -> FastMCP:
         ),
     )
     async def status() -> WorkspaceStatus:
-        """Inspect workspace state, fixed configuration, and pending execution IDs, and unread output counts."""
+        """Inspect kernel availability, configured paths, pending executions, and unread counts.
+
+        Does not execute code or consume output. ready means code can be submitted;
+        busy means read or interrupt active_execution_id first. starting/resetting
+        are transitional; unavailable means inspect error and use reset to recover.
+        closed means the server's kernel is shut down.
+
+        executions includes active work and completed outcomes not yet consumed or
+        expired; it is not execution history or a variable inventory. Counts measure
+        buffered text/image blocks before stream merging, excluding metadata and
+        internal Jupyter messages. Zero unread_output_count does not imply completion
+        or no pending outcomes. Use read_output for one ID or drain_output for all.
+        python and cwd are fixed startup settings; code may have changed its current
+        directory since startup. This tool does not inspect current kernel variables.
+        """
         return WorkspaceStatus.model_validate(kernel.status())
 
     return server

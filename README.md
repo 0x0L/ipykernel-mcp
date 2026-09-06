@@ -29,11 +29,16 @@ Or:
 
 The kernel executes code and returns results; the connected model interprets them.
 Available libraries and file access come from the configured Python environment.
-State lasts for the server session: resetting the workspace or restarting the server
+State lasts for the server session: resetting the kernel or restarting the server
 clears variables. Save results to files when they need to outlive the session.
 
 See the [practical examples](docs/usage.md) for successive computations, CSV analysis,
 image display, plotting, and polling long-running work.
+
+For tool selection and recovery, start with the
+[agent workflow guide](docs/usage.md#choose-the-next-tool). The same essential
+guidance is published directly in MCP server instructions, tool descriptions,
+and input/output field descriptions so clients receive it during discovery.
 
 ## Configuration
 
@@ -80,9 +85,9 @@ server's working directory. Code runs with the local user's permissions.
 | `execute(code, wait_seconds=10)` | Run Python in the persistent Jupyter kernel |
 | `read_output(execution_id, wait_seconds=0)` | Return and consume one execution's unread output and outcome |
 | `drain_output()` | Return and consume all pending output and completed outcomes |
-| `interrupt()` | Ask the currently running code to stop, preserving the workspace |
-| `reset()` | Start a fresh workspace using the same interpreter and working directory |
-| `status()` | Inspect the workspace, pending execution IDs, and unread output counts |
+| `interrupt()` | Ask the currently running code to stop, preserving kernel state |
+| `reset()` | Start a fresh kernel using the same interpreter and initial working directory |
+| `status()` | Inspect the kernel, pending execution IDs, and unread output counts |
 
 ```text
 execute(code="values = [10, 20, 30]")
@@ -164,11 +169,11 @@ Execution outcomes are:
 | `running` | Code has not finished |
 | `succeeded` | Code completed normally |
 | `failed` | Code raised an exception, or execution could not complete |
-| `cancelled` | Execution was interrupted, the workspace was reset, or the server closed |
+| `cancelled` | Execution was interrupted, the kernel was reset, or the server closed |
 
 Failures and cancellations include `error: {type, message}`. Tracebacks appear in
 the readable output. An exception from executed code is an execution outcome;
-invalid tool arguments, a busy workspace, and expired IDs are MCP tool errors.
+invalid tool arguments, a busy kernel, and expired IDs are MCP tool errors.
 
 ## Recovery and limits
 
@@ -176,11 +181,11 @@ invalid tool arguments, a busy workspace, and expired IDs are MCP tool errors.
   find the execution, then `read_output` or `interrupt`.
 - `interrupt()` sends a signal that code may catch or defer. Read the execution to
   see its eventual outcome. `reset()` replaces Python and clears all variables.
-- A crashed kernel or failed output connection makes the workspace unavailable and
+- A crashed kernel or failed output connection makes the kernel unavailable and
   resolves active waits. Call `reset()` to recover. Code is never silently rerun.
-- `status()` reports workspace `state`, configured `python` and `cwd`,
+- `status()` reports kernel `state`, configured `python` and `cwd`,
   `active_execution_id`, pending `executions`, global and per-execution
-  `unread_output_count`, and any workspace `error`. Normal
+  `unread_output_count`, and any kernel `error`. Normal
   states are `ready` and `busy`; `resetting` and `unavailable` describe recovery.
 - Output supports plain text and PNG/JPEG images, including display updates as new
   output. HTML/widgets are not rendered. All output arriving after its execution
@@ -247,7 +252,7 @@ then run the checks above. FastMCP deprecation warnings fail the test suite.
 
 Each tool publishes an output schema and MCP behavior annotations. `status` is read-only;
 `read_output` and `drain_output` consume output and are non-idempotent mutations.
-Execution, interruption, and reset can change the workspace and trigger arbitrary
+Execution, interruption, and reset can change the kernel and trigger arbitrary
 Python side effects. Inputs are validated against
 the schema without coercion. Expected kernel errors are actionable MCP tool errors;
 unexpected server exceptions are logged and masked. Execution exceptions remain

@@ -5,6 +5,34 @@ block is a separate call; run the blocks within each example in order. Variables
 remain available between calls in the same server session. The MCP entry in the
 repository configuration is named `ipykernel`.
 
+## Choose the next tool
+
+The kernel starts with the server. No separate start call is needed. Send Python
+source as the `code` argument of `execute`, without Markdown fences. Tool calls
+such as `read_output` are MCP requests, not functions to execute inside the kernel.
+
+| Situation | Next action |
+|---|---|
+| Calculate, load data, or reuse a variable | Call `execute` with code. |
+| `execute` or `read_output` returns `running` | Call `read_output` with that execution ID and a positive `wait_seconds`, such as 10. Do not resubmit the code. |
+| A final outcome is returned | Use its output; the execution record is now removed. |
+| Collect all pending results | Call `drain_output`; it also returns silent completions. |
+| Find active work or pending results | Call `status`; it does not consume output. |
+| Stop work while keeping variables | Call `interrupt`, then read the targeted execution's eventual outcome. |
+| A code exception occurs | Inspect the error and fix the code; earlier variable/file changes may remain. |
+| Kernel state is `unavailable` | Inspect the error, then use `reset` to recover with a fresh kernel. |
+
+After a lost or cancelled tool response, inspect `status` before deciding what to
+do next. The code may still be running or may already have produced side effects.
+Consumed output cannot be replayed. Use one output consumer at a time, choosing
+either individual reads or a drain. A zero unread count excludes neither running
+work nor silent completed outcomes; inspect execution statuses too.
+
+`status().cwd` reports the configured initial directory, not a live directory
+lookup. If needed, execute `import os; print(os.getcwd())` to inspect the current
+directory. `reset` restores the initial directory and clears in-memory state; it
+does not undo file writes or consume old pending results.
+
 ## Compute once, ask follow-up questions
 
 Define a function in one call:
@@ -156,7 +184,7 @@ final outcome is returned. After success,
 `execute(code="result")` returns `42`. A wait timeout does not stop computation,
 and only one execution runs at a time. If you lose track of an active call, use
 `status()` to find its ID. `interrupt()` asks it to stop while preserving the
-workspace; `reset()` clears the workspace and starts fresh.
+kernel; `reset()` clears the kernel and starts fresh.
 
 ## Inspect and clear pending output
 

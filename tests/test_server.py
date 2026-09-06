@@ -227,3 +227,43 @@ async def test_drain_wire_schema_images_silent_outcomes_and_counts():
         assert metadata(await client.call_tool("drain_output", {})) == {
             "executions": []
         }
+
+
+async def test_discovery_publishes_documented_fields_and_executable_examples():
+    """Check the metadata a model actually receives, including nested schemas."""
+    import json
+    import re
+
+    from ipykernel_mcp.server import INSTRUCTIONS
+
+    def check_fields(schema):
+        if isinstance(schema, dict):
+            for name, field in schema.get("properties", {}).items():
+                assert field.get("description"), f"Missing field guidance: {name}"
+            for value in schema.values():
+                check_fields(value)
+        elif isinstance(schema, list):
+            for value in schema:
+                check_fields(value)
+
+    async with Client(create_server(configured_kernel())) as client:
+        assert client.instructions == INSTRUCTIONS
+        tools = {tool.name: tool for tool in await client.list_tools()}
+        for tool in tools.values():
+            assert tool.description and tool.title
+            check_fields(tool.input_schema)
+            check_fields(tool.output_schema)
+        description = tools["execute"].description
+        assert description is not None
+        examples = re.findall(r"(?:Example|Follow-up): (\{[^\n]+\})", description)
+        assert len(examples) == 2
+        for arguments, expected in zip(examples, ("60", "20.0"), strict=True):
+            result = await client.call_tool("execute", json.loads(arguments))
+            assert metadata(result)["status"] == "succeeded"
+            assert any(
+                block.type == "text" and block.text == f"[result]\n{expected}"
+                for block in result.content
+            )
+        state = metadata(await client.call_tool("status", {}))
+        assert state["executions"] == []
+        assert state["unread_output_count"] == 0
