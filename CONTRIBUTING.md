@@ -72,8 +72,7 @@ Add regression tests for changed behavior. Keep the README and usage examples fo
 Document tool selection, output consumption, polling, and recovery in MCP server
 instructions, tool descriptions, and response field descriptions; agents receive
 these through discovery. Verify that metadata through a real MCP client.
-Record user-visible changes in [CHANGELOG.md](CHANGELOG.md). Architecture and
-lifecycle invariants are documented in [CLAUDE.md](CLAUDE.md).
+Architecture and lifecycle invariants are documented in [AGENTS.md](AGENTS.md).
 
 Commit `uv.lock` with dependency changes. FastMCP is deliberately pinned; review
 its migration guidance before updating. CI and pre-commit use locked development
@@ -85,8 +84,7 @@ GitHub Actions are pinned to commit SHAs, with Dependabot proposing updates.
 
 1. Finish the checks above and require a passing GitHub Actions run for the exact
    commit being released.
-2. Update the version in `pyproject.toml` and move the relevant changelog entries
-   from Unreleased into a versioned section with the release date.
+2. Update the version in `pyproject.toml`.
 3. Build the source distribution and wheel. Inspect their contents for required
    documentation/license files and accidental local configuration or private data.
 4. Smoke-test the wheel in an isolated environment with `uv run --isolated

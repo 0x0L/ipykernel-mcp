@@ -16,8 +16,16 @@ libraries. Python, R, and Julia kernels can be selected; automated tests cover P
 
 ## Configuration
 
-You need [uv](https://docs.astral.sh/uv/), an MCP-compatible client, and a Jupyter
-installation with the language kernel you want to use.
+You need an MCP-compatible client and a Jupyter installation with the language
+kernel you want to use.
+
+The MCP server requires Python 3.12 or later. This requirement is independent of
+the selected kernel's language and interpreter version.
+
+The examples use [uv](https://docs.astral.sh/uv/) for convenience. It is optional:
+`uvx` handles installing and running the server in an isolated environment, so
+you do not need to install the server manually. You can also install the server
+with pip or pipx and run `ipykernel-mcp` directly.
 
 ### Prepare a Python environment
 
@@ -78,17 +86,15 @@ and the [client configuration examples](examples/).
 
 ### Choose another environment or language
 
-A kernel's registration, called a *kernelspec*, determines which interpreter and
-libraries it uses. It can point to an environment different from the Jupyter
-installation. To register another Python environment that has ipykernel installed:
+You can use any kernel listed by your selected Jupyter installation:
 
 ```bash
-/path/to/other/.venv/bin/python -m ipykernel install --user --name project-python --display-name "Project Python"
 /path/to/project/.venv/bin/jupyter kernelspec list
 ```
 
-Then use `--kernel project-python`. For R or Julia, install and register IRkernel
-or IJulia and choose its name from the same listing.
+Set `--kernel` to a name from that list. Each kernel determines its own language,
+interpreter, and libraries, which can belong to a different environment from
+the Jupyter installation.
 
 Add separate MCP server entries to make several environments available to your
 agent. Each gets its own kernel and independent in-memory state.
@@ -146,4 +152,3 @@ subprocesses, and the network. Use an appropriately isolated environment for
 untrusted code or data.
 
 For development and release checks, see [Contributing](CONTRIBUTING.md).
-For changes and migration notes, see the [Changelog](CHANGELOG.md).
