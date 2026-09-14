@@ -2,7 +2,7 @@ import pytest
 from conftest import execution_metadata
 from mcp.types import ImageContent, TextContent
 
-from ipykernel_mcp.execution import Execution
+from jupyter_kernel_mcp.execution import Execution
 
 
 def text(execution):

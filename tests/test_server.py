@@ -8,9 +8,9 @@ from fastmcp import Client
 from fastmcp.exceptions import ToolError
 from jupyter_client import AsyncKernelClient
 
-from ipykernel_mcp.interpreter import KernelConfig
-from ipykernel_mcp.kernel import Kernel
-from ipykernel_mcp.server import create_server
+from jupyter_kernel_mcp.interpreter import KernelConfig
+from jupyter_kernel_mcp.kernel import Kernel
+from jupyter_kernel_mcp.server import create_server
 
 PROJECT = str(Path(__file__).resolve().parent.parent)
 
@@ -135,7 +135,7 @@ async def test_stdio_explicit_interpreter_smoke():
         command=sys.executable,
         args=[
             "-m",
-            "ipykernel_mcp.server",
+            "jupyter_kernel_mcp.server",
             "--jupyter",
             str(Path(sys.executable).with_name("jupyter")),
             "--kernel",
@@ -196,7 +196,7 @@ async def test_cli_rejects_missing_or_invalid_interpreter(args):
     process = await asyncio.create_subprocess_exec(
         sys.executable,
         "-m",
-        "ipykernel_mcp.server",
+        "jupyter_kernel_mcp.server",
         *args,
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
@@ -291,7 +291,7 @@ async def test_unexpected_errors_are_masked_but_expected_errors_are_actionable(
 
 
 async def test_drain_wire_content_images_silent_outcomes_and_counts():
-    from ipykernel_mcp.execution import Execution
+    from jupyter_kernel_mcp.execution import Execution
 
     kernel = configured_kernel()
     async with Client(create_server(kernel)) as client:
@@ -319,7 +319,7 @@ async def test_discovery_publishes_documented_fields_and_executable_examples():
     import json
     import re
 
-    from ipykernel_mcp.server import INSTRUCTIONS
+    from jupyter_kernel_mcp.server import INSTRUCTIONS
 
     def check_fields(schema):
         if isinstance(schema, dict):
@@ -377,7 +377,7 @@ async def test_discovery_identifies_non_python_kernel(monkeypatch):
 
 
 async def test_read_wire_content_running_truncated_and_cancelled():
-    from ipykernel_mcp.execution import Execution
+    from jupyter_kernel_mcp.execution import Execution
 
     kernel = configured_kernel()
     async with Client(create_server(kernel)) as client:

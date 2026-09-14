@@ -1,4 +1,4 @@
-# ipykernel-mcp
+# jupyter-kernel-mcp
 
 Give your AI agent a persistent Jupyter kernel for calculations, data analysis,
 and plots. Data, variables, and functions stay available as you ask follow-up
@@ -25,7 +25,7 @@ the selected kernel's language and interpreter version.
 The examples use [uv](https://docs.astral.sh/uv/) for convenience. It is optional:
 `uvx` handles installing and running the server in an isolated environment, so
 you do not need to install the server manually. You can also install the server
-with pip or pipx and run `ipykernel-mcp` directly.
+with pip or pipx and run `jupyter-kernel-mcp` directly.
 
 ### Prepare a Python environment
 
@@ -60,8 +60,8 @@ with absolute paths on your machine:
     "jupyter-python": {
       "command": "uvx",
       "args": [
-        "--from", "git+https://github.com/0x0L/ipykernel-mcp",
-        "ipykernel-mcp",
+        "--from", "git+https://github.com/0x0L/jupyter-kernel-mcp",
+        "jupyter-kernel-mcp",
         "--jupyter", "/path/to/project/.venv/bin/jupyter",
         "--kernel", "python3",
         "--cwd", "/path/to/project"

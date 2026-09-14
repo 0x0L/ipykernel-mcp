@@ -4,11 +4,11 @@
       "command": "uv",
       "args": [
         "run",
-        "--project", "/absolute/path/to/ipykernel-mcp",
+        "--project", "/absolute/path/to/jupyter-kernel-mcp",
         "--locked",
         "--dev",
-        "ipykernel-mcp",
-        "--jupyter", "/absolute/path/to/ipykernel-mcp/.venv/bin/jupyter",
+        "jupyter-kernel-mcp",
+        "--jupyter", "/absolute/path/to/jupyter-kernel-mcp/.venv/bin/jupyter",
         "--kernel", "python3",
         "--cwd", "/absolute/path/to/project"
       ]

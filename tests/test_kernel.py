@@ -9,8 +9,8 @@ import pytest
 from conftest import drained_metadata
 from conftest import execution_metadata as metadata
 
-from ipykernel_mcp.interpreter import KernelConfig
-from ipykernel_mcp.kernel import Kernel, KernelError
+from jupyter_kernel_mcp.interpreter import KernelConfig
+from jupyter_kernel_mcp.kernel import Kernel, KernelError
 
 PROJECT = str(Path(__file__).resolve().parent.parent)
 
@@ -150,7 +150,7 @@ async def test_concurrent_retrievals_are_safe(kernel):
 
 
 async def test_bounded_unread_retention_and_expiry(kernel):
-    from ipykernel_mcp.execution import Execution
+    from jupyter_kernel_mcp.execution import Execution
 
     kernel.max_retained_executions = 2
     for i in range(3):

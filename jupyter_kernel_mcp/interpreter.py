@@ -93,10 +93,10 @@ class JupyterKernelManager:
 
     async def start_kernel(self, *, cwd: str) -> None:
         self.kernel_spec = await check_kernel(self.config)
-        self._directory = tempfile.TemporaryDirectory(prefix="ipykernel-mcp-")
+        self._directory = tempfile.TemporaryDirectory(prefix="jupyter-kernel-mcp-")
         runtime = Path(self._directory.name)
         connection = runtime / "connection.json"
-        env = dict(os.environ, IPYKERNEL_MCP_RUNTIME_DIR=str(runtime))
+        env = dict(os.environ, KERNEL_MCP_RUNTIME_DIR=str(runtime))
         # Never let CLI logging or kernel output corrupt the MCP stdout transport.
         self.process = await asyncio.create_subprocess_exec(
             str(self.config.jupyter),

@@ -12,7 +12,7 @@ from pathlib import Path
 from jupyter_client.kernelapp import KernelApp
 from tornado.ioloop import PeriodicCallback
 
-_runtime = Path(os.environ["IPYKERNEL_MCP_RUNTIME_DIR"])
+_runtime = Path(os.environ["KERNEL_MCP_RUNTIME_DIR"])
 _app = KernelApp.instance()
 
 

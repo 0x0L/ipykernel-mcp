@@ -7,9 +7,9 @@ from pathlib import Path
 import pytest
 from conftest import drained_metadata, execution_metadata
 
-from ipykernel_mcp.execution import Execution
-from ipykernel_mcp.interpreter import KernelConfig
-from ipykernel_mcp.kernel import Kernel, KernelError
+from jupyter_kernel_mcp.execution import Execution
+from jupyter_kernel_mcp.interpreter import KernelConfig
+from jupyter_kernel_mcp.kernel import Kernel, KernelError
 
 
 @pytest.fixture
@@ -123,7 +123,7 @@ async def test_failed_response_build_does_not_partially_drain(workspace, monkeyp
 async def test_drain_budget_leaves_whole_results_for_subsequent_calls(
     workspace, monkeypatch
 ):
-    import ipykernel_mcp.kernel as kernel_module
+    import jupyter_kernel_mcp.kernel as kernel_module
 
     monkeypatch.setattr(kernel_module, "MAX_DRAIN_BYTES", 3000)
     for key in ("first", "second", "third"):
@@ -140,7 +140,7 @@ async def test_drain_budget_leaves_whole_results_for_subsequent_calls(
 
 
 async def test_drain_budget_accounts_for_json_escaping(workspace, monkeypatch):
-    import ipykernel_mcp.kernel as kernel_module
+    import jupyter_kernel_mcp.kernel as kernel_module
 
     monkeypatch.setattr(kernel_module, "MAX_DRAIN_BYTES", 3000)
     for key in ("first", "second"):
@@ -155,7 +155,7 @@ async def test_drain_budget_accounts_for_json_escaping(workspace, monkeypatch):
 async def test_single_result_exceeding_drain_budget_is_not_consumed(
     workspace, monkeypatch
 ):
-    import ipykernel_mcp.kernel as kernel_module
+    import jupyter_kernel_mcp.kernel as kernel_module
 
     monkeypatch.setattr(kernel_module, "MAX_DRAIN_BYTES", 1024)
     execution = add(workspace, "first", done=True)

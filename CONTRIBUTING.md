@@ -40,8 +40,8 @@ Both local configuration files are ignored by Git. Replace the example absolute
 paths with your checkout and desired working directory. Both examples run:
 
 ```bash
-uv run --project /absolute/path/to/ipykernel-mcp --locked --dev ipykernel-mcp \
-  --jupyter /absolute/path/to/ipykernel-mcp/.venv/bin/jupyter \
+uv run --project /absolute/path/to/jupyter-kernel-mcp --locked --dev jupyter-kernel-mcp \
+  --jupyter /absolute/path/to/jupyter-kernel-mcp/.venv/bin/jupyter \
   --kernel python3 \
   --cwd /absolute/path/to/project
 ```
@@ -50,7 +50,7 @@ uv run --project /absolute/path/to/ipykernel-mcp --locked --dev ipykernel-mcp \
 Select its `.venv/bin/jupyter` and `python3` kernel to use those libraries, or
 point `--jupyter` at another installation. An explicitly registered kernelspec
 can still select a different interpreter.
-When upgrading an existing local config, add `"--jupyter", "/absolute/path/to/ipykernel-mcp/.venv/bin/jupyter"`
+When upgrading an existing local config, add `"--jupyter", "/absolute/path/to/jupyter-kernel-mcp/.venv/bin/jupyter"`
 to the server's `args` in `.mcp.json` or `.codex/config.toml`, alongside
 `"--kernel", "python3"`. Keep any existing per-tool approval settings.
 After restarting the MCP connection, call `status()` and check that `jupyter`
@@ -88,7 +88,7 @@ GitHub Actions are pinned to commit SHAs, with Dependabot proposing updates.
 3. Build the source distribution and wheel. Inspect their contents for required
    documentation/license files and accidental local configuration or private data.
 4. Smoke-test the wheel in an isolated environment with `uv run --isolated
-   --no-project --with /absolute/path/to/package.whl ipykernel-mcp --help`, then
+   --no-project --with /absolute/path/to/package.whl jupyter-kernel-mcp --help`, then
    verify an MCP connection with an explicit Jupyter executable and kernel.
 5. Tag the validated commit and describe changes and compatibility limitations
    in its GitHub release notes. Publishing is a separate maintainer action;

@@ -49,5 +49,5 @@ jobs:
       - name: Smoke test installed wheel
         run: |
           for wheel_path in dist/*.whl; do
-            uv run --isolated --no-project --with "$wheel_path" ipykernel-mcp --help
+            uv run --isolated --no-project --with "$wheel_path" jupyter-kernel-mcp --help
           done

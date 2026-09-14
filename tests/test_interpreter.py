@@ -5,8 +5,8 @@ from pathlib import Path
 import pytest
 from conftest import execution_metadata
 
-from ipykernel_mcp.interpreter import InterpreterError, KernelConfig, check_kernel
-from ipykernel_mcp.kernel import Kernel, KernelError
+from jupyter_kernel_mcp.interpreter import InterpreterError, KernelConfig, check_kernel
+from jupyter_kernel_mcp.kernel import Kernel, KernelError
 
 
 def test_explicit_kernel_and_cwd(tmp_path):
@@ -70,7 +70,7 @@ async def test_cli_rejects_missing_kernel():
     process = await asyncio.create_subprocess_exec(
         sys.executable,
         "-m",
-        "ipykernel_mcp.server",
+        "jupyter_kernel_mcp.server",
         "--jupyter",
         str(Path(sys.executable).with_name("jupyter")),
         "--kernel",

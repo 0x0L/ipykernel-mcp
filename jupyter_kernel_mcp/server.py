@@ -136,8 +136,8 @@ def create_server(kernel: Kernel) -> FastMCP:
                 await kernel.close()
 
     server = FastMCP(
-        "ipykernel-mcp",
-        version=version("ipykernel-mcp"),
+        "jupyter-kernel-mcp",
+        version=version("jupyter-kernel-mcp"),
         instructions=INSTRUCTIONS,
         lifespan=kernel_lifespan,
         strict_input_validation=True,
@@ -344,7 +344,7 @@ def main() -> None:
     try:
         create_server(Kernel(config)).run(transport="stdio", show_banner=False)
     except KernelError as exc:
-        parser.exit(1, f"ipykernel-mcp: {exc}\n")
+        parser.exit(1, f"jupyter-kernel-mcp: {exc}\n")
 
 
 if __name__ == "__main__":

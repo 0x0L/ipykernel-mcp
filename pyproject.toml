@@ -1,5 +1,5 @@
 [project]
-name = "ipykernel-mcp"
+name = "jupyter-kernel-mcp"
 version = "0.1.0"
 description = "A persistent Jupyter kernel for MCP"
 readme = "README.md"
@@ -14,9 +14,9 @@ dependencies = [
 ]
 
 [project.urls]
-Repository = "https://github.com/0x0L/ipykernel-mcp"
-Documentation = "https://github.com/0x0L/ipykernel-mcp/blob/main/README.md"
-Issues = "https://github.com/0x0L/ipykernel-mcp/issues"
+Repository = "https://github.com/0x0L/jupyter-kernel-mcp"
+Documentation = "https://github.com/0x0L/jupyter-kernel-mcp/blob/main/README.md"
+Issues = "https://github.com/0x0L/jupyter-kernel-mcp/issues"
 
 [dependency-groups]
 dev = [
@@ -39,4 +39,4 @@ asyncio_mode = "auto"
 filterwarnings = ["error::fastmcp.exceptions.FastMCPDeprecationWarning"]
 
 [project.scripts]
-ipykernel-mcp = "ipykernel_mcp.server:main"
+jupyter-kernel-mcp = "jupyter_kernel_mcp.server:main"

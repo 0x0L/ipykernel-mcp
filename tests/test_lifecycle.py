@@ -8,9 +8,9 @@ from unittest.mock import AsyncMock, Mock
 import pytest
 from jupyter_client import AsyncKernelClient
 
-from ipykernel_mcp.execution import Execution
-from ipykernel_mcp.interpreter import JupyterKernelManager, KernelConfig
-from ipykernel_mcp.kernel import Kernel, KernelError
+from jupyter_kernel_mcp.execution import Execution
+from jupyter_kernel_mcp.interpreter import JupyterKernelManager, KernelConfig
+from jupyter_kernel_mcp.kernel import Kernel, KernelError
 
 
 @pytest.fixture
@@ -23,7 +23,7 @@ async def fake_kernel(monkeypatch, tmp_path):
     client.wait_for_ready = AsyncMock()
     manager.client.return_value = client
     monkeypatch.setattr(
-        "ipykernel_mcp.kernel.create_kernel_manager", lambda config: manager
+        "jupyter_kernel_mcp.kernel.create_kernel_manager", lambda config: manager
     )
     kernel = Kernel(
         KernelConfig(Path(sys.executable).with_name("jupyter"), "python3", tmp_path)
