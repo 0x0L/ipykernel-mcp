@@ -17,7 +17,7 @@ from pydantic import Field
 
 from .interpreter import InterpreterError, KernelConfig
 from .kernel import Kernel, KernelError
-from .schemas import DrainOutput, ExecutionMetadata, InterruptResult, KernelStatus
+from .schemas import InterruptResult, KernelStatus
 
 WaitSeconds = Annotated[
     float,
@@ -44,7 +44,8 @@ KernelCode = Annotated[
 ]
 
 INSTRUCTIONS = """A persistent Jupyter kernel for computation, data analysis, and images.
-Call execute to run code. Variables survive calls. If status is running, continue
+Call execute to run code. Variables survive calls. Read the first [metadata] text
+block for JSON execution_id, status, truncated, and error. If status is running, continue
 with read_output(execution_id); do not resubmit the code. Returned output is consumed,
 including execute output. Completed IDs are removed on return; reads cannot replay.
 Use status to inspect pending IDs/counts, drain_output to consume all pending results,
@@ -68,9 +69,14 @@ Use one output consumer at a time: read_output for one ID or drain_output for al
 A cancelled tool wait leaves code running. After a lost response, inspect status;
 do not blindly rerun code, which may already have changed variables or files.
 
-Results contain content (text/images) and structured execution metadata: status is
-running, succeeded, failed, or cancelled. Code exceptions return failed outcomes
-with error details and may leave partial changes; they do not require a restart.
+execute, read_output, and drain_output return content only, without structuredContent.
+Each execution group starts with a [metadata] text block containing JSON:
+{"execution_id":"opaque ID","status":"succeeded","truncated":false,"error":null}.
+The remaining blocks contain labeled text or native images. Metadata status is
+running, succeeded, failed, or cancelled; truncated is true if output was dropped
+since the previous read; error is null or an object with type and message.
+Metadata is returned even for silent executions and is excluded from unread counts.
+Code exceptions return failed outcomes with error details and may leave partial changes; they do not require a restart.
 Invalid requests, busy kernels, and consumed/expired IDs are MCP tool errors.
 If the kernel is unavailable, restart recovers it but loses in-memory state.
 interrupt requests a stop; only a later result confirms the outcome.
@@ -94,8 +100,9 @@ blocks. truncated reports dropped output since the previous read; reads replenis
 capacity. Unread completed results expire after 10 minutes; at most 16 executions
 are tracked, evicting oldest completed results first. Consumed results are removed
 immediately. drain_output returns whole results within an 8 MiB JSON budget;
-repeat until executions is empty. Excess results remain unread. Save needed results
-in your response or files; there is no replay.
+repeat until the response says "No pending output or outcomes." This does not imply
+the kernel is idle. Excess results remain unread. Save needed results in your
+response or files; there is no replay.
 """
 
 
@@ -139,7 +146,6 @@ def create_server(kernel: Kernel) -> FastMCP:
 
     @server.tool(
         title="Execute in Jupyter kernel",
-        output_schema=ExecutionMetadata.model_json_schema(),
         annotations=ToolAnnotations(
             read_only_hint=False,
             destructive_hint=True,
@@ -154,7 +160,9 @@ def create_server(kernel: Kernel) -> FastMCP:
         imports, and functions survive calls. Jupyter display data containing PNG
         or JPEG images is returned as image content.
 
-        Returns text/images plus execution_id, status, truncated, and error.
+        Returns content only: a [metadata] text block containing JSON execution_id,
+        status (running/succeeded/failed/cancelled), truncated (output dropped since
+        the previous read), and error (null or {type, message}), then text/images.
         Returned output is consumed. If running, call read_output with that ID
         and a positive wait_seconds; do not resubmit code. A final outcome removes
         the ID, so no follow-up read is needed. Code errors may leave partial state.
@@ -169,7 +177,6 @@ def create_server(kernel: Kernel) -> FastMCP:
 
     @server.tool(
         title="Read execution output",
-        output_schema=ExecutionMetadata.model_json_schema(),
         annotations=ToolAnnotations(
             read_only_hint=False,
             destructive_hint=True,
@@ -185,7 +192,9 @@ def create_server(kernel: Kernel) -> FastMCP:
 
         Use the ID returned by execute or listed in status.executions. Defaults
         to an immediate read; use wait_seconds=10 to wait for unfinished work.
-        Returns text/images plus execution_id, status, truncated, and error.
+        Returns content only: a [metadata] text block containing JSON execution_id,
+        status (running/succeeded/failed/cancelled), truncated (output dropped since
+        the previous read), and error (null or {type, message}), then text/images.
         If running, keep reading the same ID. A final outcome removes the record,
         including silent completions; do not read that ID again. No code is run.
 
@@ -199,7 +208,6 @@ def create_server(kernel: Kernel) -> FastMCP:
 
     @server.tool(
         title="Drain pending output batch",
-        output_schema=DrainOutput.model_json_schema(),
         annotations=ToolAnnotations(
             read_only_hint=False,
             destructive_hint=True,
@@ -210,18 +218,22 @@ def create_server(kernel: Kernel) -> FastMCP:
     async def drain_output() -> ToolResult:
         """Retrieve and consume a bounded batch of pending output and outcomes without waiting.
 
-        Repeat until executions is empty to collect pending results; use read_output
-        to target one ID. Each response has an 8 MiB JSON budget; whole execution
-        results that do not fit remain unread for the next call.
-        Each content group starts with an [execution] header identifying its ID
-        and outcome, followed by text/images. Structured executions lists the same
-        metadata in group order. Silent completed outcomes and truncation notices
-        are included even when status.unread_output_count is zero.
+        Repeat until the response is "No pending output or outcomes." to collect
+        pending results; use read_output to target one ID. Each response has an 8 MiB
+        JSON budget; whole execution results that do not fit remain unread for the
+        next call.
+        Returns content only. Each execution group starts with a [metadata] text
+        block containing JSON execution_id, status (running/succeeded/failed/cancelled),
+        truncated (output dropped since the previous read), and error (null or
+        {type, message}), followed by that execution's text/images. Silent completed
+        outcomes and truncation notices are included even when
+        status.unread_output_count is zero.
 
         Returned output is released and completed records are removed. Running
         records remain; output arriving afterward stays unread. Running records
-        with no output or truncation notice are omitted. An empty executions list
-        means nothing was pending to return, not necessarily that the kernel is idle.
+        with no output or truncation notice are omitted. The text
+        "No pending output or outcomes." means nothing was pending to return,
+        not necessarily that the kernel is idle.
         Check status for active work. Do not overlap with other output consumers.
         Does not run code, stop execution, or clear kernel variables. No replay.
         """

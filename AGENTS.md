@@ -76,8 +76,9 @@ Build responses before committing consumption, with no await between those steps
 Concurrent consumers must never receive the same output or final outcome twice;
 a waiter whose final outcome was consumed elsewhere receives a tool error.
 `drain_output` batches whole execution results within an 8 MiB JSON budget,
-leaving excess results unread. Repeat until executions is empty. It groups output by execution and includes silent completed
-outcomes and truncation notices. It keeps active records and leaves future output
+leaving excess results unread. Repeat until the response says
+"No pending output or outcomes." It groups output by execution and includes silent
+completed outcomes and truncation notices. It keeps active records and leaves future output
 unread. `status` counts unread text/image blocks globally and per execution, excluding
 metadata and internal Jupyter messages. Consuming output resets byte/block budgets
 and the truncation flag; it does not release Python variables in the kernel.
@@ -100,10 +101,15 @@ Python 3.12–3.14. Keep README examples and tool schemas synchronized.
 
 Use the FastMCP 4 public imports (`from fastmcp.tools import ToolResult`) and SDK v2
 snake_case Python fields. `mcp.types` remains the supported protocol-type import.
-Tools publish output schemas and explicit behavior annotations; inputs use strict
-schema validation. Translate only intentional `KernelError` messages to `ToolError`;
-unexpected failures are masked by FastMCP. Retain code exceptions as execution outcomes.
+All tools publish explicit behavior annotations; inputs use strict schema validation.
+`execute`, `read_output`, and `drain_output` return content only, without output schemas
+or structured content. Each execution group begins with a `[metadata]` text block
+containing validated JSON execution_id, status, truncated, and error, followed by
+text/images. Metadata is rendered at read time, outside retained output buffers.
+The other three tools publish structured results and output schemas. Translate only
+intentional `KernelError` messages to `ToolError`; unexpected failures are masked by FastMCP. Retain code exceptions as execution outcomes.
 Keep the FastMCP version pinned and review its migration guide when updating.
 CI and pre-commit must use the lockfile's tool versions. Tests treat FastMCP
-deprecation warnings as errors. Use `structured_content` for assertions on wire data,
-since the client's `data` can be a schema-derived model.
+deprecation warnings as errors. Parse `[metadata]` JSON for execution-result assertions
+and verify structured content is absent. For the other tools, assert on
+`structured_content`, since the client's `data` can be a schema-derived model.

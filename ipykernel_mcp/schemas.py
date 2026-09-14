@@ -1,4 +1,4 @@
-"""Public response contracts, shared by validation and MCP output schemas."""
+"""Validated response contracts for metadata text and MCP structured results."""
 
 from typing import Literal
 
@@ -41,12 +41,6 @@ class ExecutionMetadata(ExecutionSummary):
     )
     error: ErrorInfo | None = Field(
         description="Execution failure/cancellation details, or null. A code error can leave partial changes; it does not by itself require restart."
-    )
-
-
-class DrainOutput(BaseModel):
-    executions: list[ExecutionMetadata] = Field(
-        description="Consumed execution outcomes in content-group order, including silent completions. Each drain has an 8 MiB JSON budget; excess whole results remain unread. Repeat until empty to drain available results. Empty means no pending output/outcomes to return; running code may still exist."
     )
 
 

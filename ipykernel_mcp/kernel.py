@@ -12,10 +12,11 @@ from queue import Empty
 from anyio import CancelScope
 from fastmcp.tools import ToolResult
 from jupyter_client import AsyncKernelClient
+from mcp.types import TextContent
 
 from .execution import Execution
 from .interpreter import JupyterKernelManager, KernelConfig, create_kernel_manager
-from .schemas import DrainOutput, ExecutionStatus
+from .schemas import ExecutionStatus
 
 logger = logging.getLogger(__name__)
 DEFAULT_WAIT_SECONDS = 10.0
@@ -307,7 +308,7 @@ class Kernel:
         # channel readers, other consumers, or cancellation to interleave here.
         results = []
         selected = []
-        # Account for JSON escaping and both content and structured metadata.
+        # Account for JSON escaping, including metadata text blocks.
         # Reserve space for the outer response envelope and list separators.
         remaining = MAX_DRAIN_BYTES - 1024
         for execution in pending:
@@ -321,7 +322,6 @@ class Kernel:
                             )
                             for block in result.content
                         ],
-                        "structuredContent": result.structured_content,
                     },
                     ensure_ascii=True,
                 ).encode()
@@ -336,12 +336,9 @@ class Kernel:
             remaining -= size
             results.append(result)
             selected.append(execution)
-        metadata = DrainOutput.model_validate(
-            {"executions": [result.structured_content for result in results]}
-        ).model_dump()
         result = ToolResult(
-            content=[block for result in results for block in result.content],
-            structured_content=metadata,
+            content=[block for result in results for block in result.content]
+            or [TextContent(type="text", text="No pending output or outcomes.")],
         )
         for execution in selected:
             self._consume(execution)

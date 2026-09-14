@@ -6,6 +6,8 @@ import time
 from pathlib import Path
 
 import pytest
+from conftest import drained_metadata
+from conftest import execution_metadata as metadata
 
 from ipykernel_mcp.interpreter import KernelConfig
 from ipykernel_mcp.kernel import Kernel, KernelError
@@ -13,15 +15,11 @@ from ipykernel_mcp.kernel import Kernel, KernelError
 PROJECT = str(Path(__file__).resolve().parent.parent)
 
 
-def metadata(result):
-    return result.structured_content
-
-
 def output(result):
     return "\n".join(
         b.text
         for b in result.content
-        if b.type == "text" and not b.text.startswith("[execution]")
+        if b.type == "text" and not b.text.startswith("[metadata]")
     )
 
 
@@ -305,14 +303,14 @@ async def test_drain_real_kernel_keeps_future_output_and_variables(kernel):
             await asyncio.sleep(0.01)
     first = await kernel.drain_output()
     assert "before" in output(first)
-    assert metadata(first)["executions"][0]["status"] == "running"
+    assert drained_metadata(first)[0]["status"] == "running"
     assert kernel.status()["unread_output_count"] == 0
     assert key in kernel.executions
     async with asyncio.timeout(3):
         await kernel.executions[key].done_event.wait()
     last = await kernel.drain_output()
     assert "after" in output(last) and "before" not in output(last)
-    assert metadata(last)["executions"][0]["status"] == "succeeded"
+    assert drained_metadata(last)[0]["status"] == "succeeded"
     assert not kernel.executions
-    assert metadata(await kernel.drain_output()) == {"executions": []}
+    assert drained_metadata(await kernel.drain_output()) == []
     assert "42" in output(await kernel.execute("answer"))

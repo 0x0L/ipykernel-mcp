@@ -3,6 +3,7 @@ import sys
 from pathlib import Path
 
 import pytest
+from conftest import execution_metadata
 
 from ipykernel_mcp.interpreter import InterpreterError, KernelConfig, check_kernel
 from ipykernel_mcp.kernel import Kernel, KernelError
@@ -142,8 +143,7 @@ async def test_selected_cli_owns_discovery_launch_and_restart(tmp_path):
         result = await kernel.execute(
             "import os; print(os.environ['SELECTED_JUPYTER_TEST'])"
         )
-        assert result.structured_content is not None
-        assert result.structured_content["status"] == "succeeded"
+        assert execution_metadata(result)["status"] == "succeeded"
         assert any(
             "selected environment" in b.text for b in result.content if b.type == "text"
         )
@@ -151,8 +151,7 @@ async def test_selected_cli_owns_discovery_launch_and_restart(tmp_path):
         managers.append(kernel.manager)
         assert kernel.status()["jupyter"] == str(launcher)
         result = await kernel.execute("40 + 2")
-        assert result.structured_content is not None
-        assert result.structured_content["status"] == "succeeded"
+        assert execution_metadata(result)["status"] == "succeeded"
     finally:
         await kernel.close()
     for manager in managers:

@@ -1,4 +1,5 @@
 import pytest
+from conftest import execution_metadata
 from mcp.types import ImageContent, TextContent
 
 from ipykernel_mcp.execution import Execution
@@ -8,7 +9,7 @@ def text(execution):
     return "\n".join(
         b.text
         for b in execution.to_tool_result().content
-        if b.type == "text" and not b.text.startswith("[execution]")
+        if b.type == "text" and not b.text.startswith("[metadata]")
     )
 
 
@@ -58,8 +59,7 @@ def test_consumption_releases_payloads_and_replenishes_limits():
     r.append("stdout", "before overflow")
     r.append("display", "cG5n", "image/png")
     result = r.to_tool_result()
-    assert result.structured_content is not None
-    assert result.structured_content["truncated"]
+    assert execution_metadata(result)["truncated"]
     r.consume()
     assert not r.outputs
     assert r.stored_bytes == r.text_bytes == 0
@@ -331,3 +331,27 @@ def test_early_shell_error_does_not_reorder_iopub_output():
     r.handle_message("status", {"execution_state": "idle"})
     assert [event.kind for event in r.outputs] == ["stdout", "error"]
     assert r.status == "failed"
+
+
+@pytest.mark.parametrize("status", ["running", "succeeded", "failed", "cancelled"])
+def test_silent_metadata_is_rendered_without_using_output_budget(status):
+    execution = Execution("id", max_bytes=0, max_output_blocks=0)
+    initial = execution.to_tool_result()
+    error = None
+    if status != "running":
+        if status == "succeeded":
+            execution.finish(status)
+        else:
+            error = {"type": "Failure", "message": 'line one\n"quoted" é'}
+            execution.finish(status, error["type"], error["message"])
+    result = execution.to_tool_result()
+    assert len(result.content) == 1
+    assert execution_metadata(result) == {
+        "execution_id": "id",
+        "status": status,
+        "truncated": False,
+        "error": error,
+    }
+    assert execution_metadata(initial)["status"] == "running"
+    assert not execution.outputs
+    assert execution.stored_bytes == execution.text_bytes == 0

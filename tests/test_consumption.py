@@ -5,6 +5,7 @@ import sys
 from pathlib import Path
 
 import pytest
+from conftest import drained_metadata, execution_metadata
 
 from ipykernel_mcp.execution import Execution
 from ipykernel_mcp.interpreter import KernelConfig
@@ -40,7 +41,7 @@ async def test_status_counts_blocks_without_consuming_and_drain_groups(workspace
     assert state["unread_output_count"] == 3
     assert [e["unread_output_count"] for e in state["executions"]] == [2, 0, 1]
     result = await workspace.drain_output()
-    assert [e["execution_id"] for e in result.structured_content["executions"]] == [
+    assert [e["execution_id"] for e in drained_metadata(result)] == [
         "first",
         "silent",
         "running",
@@ -70,11 +71,11 @@ async def test_drain_delivers_truncation_without_blocks_and_replenishes(workspac
     execution.append("display", "cG5n", "image/png")
     assert workspace.status()["unread_output_count"] == 0
     result = await workspace.drain_output()
-    assert result.structured_content["executions"][0]["truncated"]
+    assert drained_metadata(result)[0]["truncated"]
     assert not execution.truncated
-    assert (await workspace.drain_output()).structured_content == {"executions": []}
+    assert drained_metadata(await workspace.drain_output()) == []
     execution.append("stdout", "ok")
-    assert not (await workspace.read_output("running")).structured_content["truncated"]
+    assert not execution_metadata(await workspace.read_output("running"))["truncated"]
 
 
 async def test_drain_wins_against_waiting_reader_without_replaying(workspace):
@@ -131,13 +132,11 @@ async def test_drain_budget_leaves_whole_results_for_subsequent_calls(
         execution.finish("succeeded")
     for key in ("first", "second", "third"):
         result = await workspace.drain_output()
-        assert [e["execution_id"] for e in result.structured_content["executions"]] == [
-            key
-        ]
+        assert [e["execution_id"] for e in drained_metadata(result)] == [key]
         assert result.content[1].data == "A" * 1200
         assert key not in workspace.executions
         assert all(e.stored_bytes == 1200 for e in workspace.executions.values())
-    assert (await workspace.drain_output()).structured_content == {"executions": []}
+    assert drained_metadata(await workspace.drain_output()) == []
 
 
 async def test_drain_budget_accounts_for_json_escaping(workspace, monkeypatch):
@@ -149,7 +148,7 @@ async def test_drain_budget_accounts_for_json_escaping(workspace, monkeypatch):
         execution.append("stdout", "\x00" * 200)
         execution.finish("succeeded")
     result = await workspace.drain_output()
-    assert len(result.structured_content["executions"]) == 1
+    assert len(drained_metadata(result)) == 1
     assert "second" in workspace.executions
 
 
@@ -164,6 +163,7 @@ async def test_single_result_exceeding_drain_budget_is_not_consumed(
         await workspace.drain_output()
     assert not execution.delivered
     assert "first" in workspace.executions
-    assert (await workspace.read_output("first")).structured_content[
-        "status"
-    ] == "succeeded"
+    assert (
+        execution_metadata(await workspace.read_output("first"))["status"]
+        == "succeeded"
+    )

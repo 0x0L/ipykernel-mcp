@@ -215,14 +215,6 @@ class Execution:
                 "truncated": self.truncated,
                 "error": self.error,
             }
-        ).model_dump()
-        # Text-only MCP clients receive the execution outcome too.
-        summary = (
-            f"[execution]\nexecution_id: {self.execution_id}\nstatus: {self.status}"
-        )
-        if self.truncated:
-            summary += "\nOutput truncated by server limits."
-        if self.error:
-            summary += f"\n{self.error['type']}: {self.error['message']}"
-        blocks.insert(0, TextContent(type="text", text=summary))
-        return ToolResult(content=blocks, structured_content=metadata)
+        ).model_dump_json()
+        blocks.insert(0, TextContent(type="text", text=f"[metadata]\n{metadata}"))
+        return ToolResult(content=blocks)

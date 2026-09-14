@@ -3,6 +3,7 @@ import sys
 from pathlib import Path
 
 import pytest
+from conftest import drained_metadata, execution_metadata
 from fastmcp import Client
 from fastmcp.exceptions import ToolError
 from jupyter_client import AsyncKernelClient
@@ -61,12 +62,12 @@ async def test_server_owns_startup_and_shutdown():
         assert state["cwd"] == PROJECT
         assert "running" not in state
         result = await client.call_tool("execute", {"code": "42"})
-        assert metadata(result)["status"] == "succeeded"
-        assert metadata(result)["execution_id"]
+        assert execution_metadata(result)["status"] == "succeeded"
+        assert execution_metadata(result)["execution_id"]
         result = await client.call_tool("execute", {"code": "1/0"})
         assert not result.is_error
-        assert metadata(result)["status"] == "failed"
-        assert metadata(result)["error"]["type"] == "ZeroDivisionError"
+        assert execution_metadata(result)["status"] == "failed"
+        assert execution_metadata(result)["error"]["type"] == "ZeroDivisionError"
         with pytest.raises(ToolError, match="Unknown, consumed, or expired"):
             await client.call_tool("read_output", {"execution_id": "bogus"})
     assert kernel.manager is None
@@ -80,8 +81,8 @@ async def test_servers_are_isolated():
     ):
         await first.call_tool("execute", {"code": "answer = 42"})
         result = await second.call_tool("execute", {"code": "answer"})
-        assert metadata(result)["status"] == "failed"
-        assert metadata(result)["error"]["type"] == "NameError"
+        assert execution_metadata(result)["status"] == "failed"
+        assert execution_metadata(result)["error"]["type"] == "NameError"
 
 
 async def test_connection_file_attaches_to_shared_kernel_and_follows_lifecycle():
@@ -147,10 +148,39 @@ async def test_stdio_explicit_interpreter_smoke():
     async with Client(transport, timeout=30) as client:
         assert metadata(await client.call_tool("status", {}))["state"] == "ready"
         result = await client.call_tool("execute", {"code": "6 * 7"})
-        assert metadata(result)["status"] == "succeeded"
+        assert execution_metadata(result)["status"] == "succeeded"
         assert any(
             b.type == "text" and "[result]\n42" in b.text for b in result.content
         )
+
+        result = await client.call_tool(
+            "execute",
+            {
+                "code": "from IPython.display import display, Image; import base64; "
+                "print('visible stdout'); "
+                "display(Image(data=base64.b64decode("
+                "'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4z8BQDwAEgAF/pooBPQAAAABJRU5ErkJggg=='"
+                "), format='png'))",
+                "wait_seconds": 0,
+            },
+        )
+        info = execution_metadata(result)
+        blocks = list(result.content)
+        # Check read_output on the real transport even when execution completes quickly.
+        async with asyncio.timeout(30):
+            while info["status"] == "running":
+                result = await client.call_tool(
+                    "read_output",
+                    {"execution_id": info["execution_id"], "wait_seconds": 10},
+                )
+                info = execution_metadata(result)
+                blocks.extend(result.content)
+        assert info["status"] == "succeeded"
+        assert any(
+            b.type == "text" and "[stdout]\nvisible stdout" in b.text for b in blocks
+        )
+        assert any(b.type == "image" and b.mime_type == "image/png" for b in blocks)
+        assert drained_metadata(await client.call_tool("drain_output", {})) == []
 
 
 @pytest.mark.parametrize(
@@ -190,9 +220,12 @@ async def test_tool_annotations_and_output_schemas():
             assert annotations.open_world_hint is (
                 name in ("execute", "interrupt", "restart")
             )
-            assert tool.output_schema is not None
-            assert tool.output_schema["type"] == "object"
-            assert tool.output_schema["required"]
+            if name in ("execute", "read_output", "drain_output"):
+                assert tool.output_schema is None
+            else:
+                assert tool.output_schema is not None
+                assert tool.output_schema["type"] == "object"
+                assert tool.output_schema["required"]
         for name in ("status", "restart"):
             connection_field = tools[name].output_schema["properties"][
                 "connection_file"
@@ -206,20 +239,6 @@ async def test_tool_annotations_and_output_schemas():
             assert "discovery and launch" in launcher_field["description"]
         status = metadata(await client.call_tool("status", {}))
         assert status["jupyter"] == str(Path(sys.executable).with_name("jupyter"))
-        schema = tools["execute"].output_schema
-        assert schema == tools["read_output"].output_schema
-        assert schema["properties"]["status"]["enum"] == [
-            "running",
-            "succeeded",
-            "failed",
-            "cancelled",
-        ]
-        assert set(schema["required"]) == {
-            "execution_id",
-            "status",
-            "truncated",
-            "error",
-        }
         assert tools["execute"].input_schema["properties"]["wait_seconds"][
             "description"
         ]
@@ -271,7 +290,7 @@ async def test_unexpected_errors_are_masked_but_expected_errors_are_actionable(
         assert "internal diagnostic detail" not in failure.content[0].text
 
 
-async def test_drain_wire_schema_images_silent_outcomes_and_counts():
+async def test_drain_wire_content_images_silent_outcomes_and_counts():
     from ipykernel_mcp.execution import Execution
 
     kernel = configured_kernel()
@@ -286,15 +305,13 @@ async def test_drain_wire_schema_images_silent_outcomes_and_counts():
         assert state["unread_output_count"] == 1
         assert [e["unread_output_count"] for e in state["executions"]] == [1, 0]
         result = await client.call_tool("drain_output", {})
-        assert [e["execution_id"] for e in metadata(result)["executions"]] == [
+        assert [e["execution_id"] for e in drained_metadata(result)] == [
             "image",
             "silent",
         ]
         assert any(b.type == "image" and b.data == "cG5n" for b in result.content)
         assert not kernel.executions
-        assert metadata(await client.call_tool("drain_output", {})) == {
-            "executions": []
-        }
+        assert drained_metadata(await client.call_tool("drain_output", {})) == []
 
 
 async def test_discovery_publishes_documented_fields_and_executable_examples():
@@ -329,7 +346,7 @@ async def test_discovery_publishes_documented_fields_and_executable_examples():
         assert len(examples) == 2
         for arguments, expected in zip(examples, ("60", "20.0"), strict=True):
             result = await client.call_tool("execute", json.loads(arguments))
-            assert metadata(result)["status"] == "succeeded"
+            assert execution_metadata(result)["status"] == "succeeded"
             assert any(
                 block.type == "text" and block.text == f"[result]\n{expected}"
                 for block in result.content
@@ -357,3 +374,31 @@ async def test_discovery_identifies_non_python_kernel(monkeypatch):
         assert "Language: 'julia'" in client.instructions
         tools = {tool.name: tool for tool in await client.list_tools()}
         assert "Python-only examples" in tools["execute"].description
+
+
+async def test_read_wire_content_running_truncated_and_cancelled():
+    from ipykernel_mcp.execution import Execution
+
+    kernel = configured_kernel()
+    async with Client(create_server(kernel)) as client:
+        execution = Execution("pending", max_text_bytes=4)
+        execution.append("stderr", "too long")
+        kernel.executions[execution.execution_id] = execution
+        result = await client.call_tool("read_output", {"execution_id": "pending"})
+        assert execution_metadata(result) == {
+            "execution_id": "pending",
+            "status": "running",
+            "truncated": True,
+            "error": None,
+        }
+        assert result.content[1].text == "[stderr]\ntoo "
+        execution.finish("cancelled", "KernelRestarted", "Kernel restarted")
+        result = await client.call_tool("read_output", {"execution_id": "pending"})
+        assert len(result.content) == 1
+        assert execution_metadata(result) == {
+            "execution_id": "pending",
+            "status": "cancelled",
+            "truncated": False,
+            "error": {"type": "KernelRestarted", "message": "Kernel restarted"},
+        }
+        assert "pending" not in kernel.executions
